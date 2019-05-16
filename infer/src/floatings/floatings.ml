@@ -20,14 +20,18 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
 	type extras = 
 
 	let exec_instr (astate : FoatingDomain.t) {ProcData.pdesc= _; tenv= _} _
-		(instr : HilInstr.t) = 
-		(* /IR/HilInstr.ml[i] *)
+		instr = 
 		match instr with
+		| Sil.Load
+		| Sil.Store
+		(* (instr : HilInstr.t) = *)
+		(* /IR/HilInstr.ml[i] *)
+		(* match instr with
 		| Assign (access_expr, AccessExpression rhs_access_expr, _loc) ->
         ResourceLeakDomain.assign
           (HilExp.AccessExpression.to_access_path access_expr)
           (HilExp.AccessExpression.to_access_path rhs_access_expr)
-          astate
+          astate *)
 
 	let pp_session_name _node fmt = F.pp_print_string fmt "Floating checker"
 end
