@@ -24,8 +24,8 @@ let eq_nan (a:float) (b:float) : bool =
 
 module Range_el = struct
 	type t = 
-		| Range of float*float
-		| Bottom
+	| Range of float*float
+	| Bottom
 
 	let ( <= ) (lhs:t) (rhs:t) : bool = 
 		match (lhs, rhs) with
