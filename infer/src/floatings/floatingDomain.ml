@@ -1,8 +1,8 @@
 (* Copyright (c) 2019-present 5Kids *)
 
-open! IStd
+(*open! IStd
 module F = Format
-
+*)
 (* The following min, max, eq functions cope with the sign of 0. and with NaN *)
 let min_nan (a:float) (b:float) : float = 
 	match (classify_float a, classify_float b) with
@@ -22,49 +22,55 @@ let eq_nan (a:float) (b:float) : bool =
 	| (FP_zero, FP_zero) -> (copysign 1. a) = (copysign 1. b)
 	| _ -> a=b
 
-type range_el = 
-	| Range of float*float
-	| Bottom
+module Range_el = struct
+	type t = 
+		| Range of float*float
+		| Bottom
 
-type t = (string, range_el) Hashtbl.t
+	let ( <= ) (lhs:t) (rhs:t) : bool = 
+		match (lhs, rhs) with
+		| (Bottom, _)		-> true
+		| (Range _, Bottom)	-> false
+		| (Range (lhs_l, lhs_u), Range (rhs_l, rhs_u))	
+			-> (eq_nan (min_nan lhs_l rhs_l) rhs_l) && (eq_nan (max_nan lhs_u rhs_u) rhs_u)
+	
+	let merge (a:t) (b:t) : t =
+		match (a,b) with
+		| (Bottom, x) | (x, Bottom) -> x
+		| (Range (a_l, a_u), Range (b_l, b_u)) -> Range (min_nan a_l b_l, max_nan a_u b_u)
+	(* !!! XƏBƏRDARLIQ: min/max is not considering NaN !!! *)	
+end
 
-let ( <= ) (lhs:range_el) (rhs:range_el) = 
-	match (lhs, rhs) with
-	| (Bottom, _)		-> true
-	| (Range _, Bottom)	-> false
-	| (Range (lhs_l, lhs_u), Range (rhs_l, rhs_u))	
-		-> (eq_nan (min_nan lhs_l rhs_l) rhs_l) && (eq_nan (max_nan lhs_u rhs_u) rhs_u)
+module Range_el_opt = struct
+	type t = Range_el.t option
 
-let ( <= ) (lhs:range_el option) (rhs:range_el option) =
-	match (lhs, rhs) with
-	| (None, _) | (_, None) -> true
-	| (Some l, Some r) -> l <= r
+	let ( <= ) (lhs:t) (rhs:t) : bool =
+		match (lhs, rhs) with
+		| (None, _) -> true
+		| (Some l, Some r) -> Range_el.(l <= r)
+		| (_, None) -> false
+	
+	let merge (a:t) (b:t) : t =
+		match (a,b) with
+		| (None, b) -> b
+		| (a, None) -> a
+		| (Some a', Some b') -> Some (Range_el.merge a' b')
+end
+
+type t = (string, Range_el.t) Hashtbl.t
 
 let ( <= ) ~lhs ~rhs = 
-	let cmp (bind:string*range_el) (cum:bool) =
-		match bind with
-		| (str, rng) -> cum && (rng <= Hashtbl.find_opt rhs str)
+	let cmp (str:string) (rng:Range_el.t) (cum:bool) =
+		cum && Range_el_opt.((Some rng) <= Hashtbl.find_opt rhs str)
 	in Hashtbl.fold cmp lhs true
 
-let merge_r (a:range_el) (b:range_el) : range_el =
-	match (a,b) with
-	| (Bottom, x) | (x, Bottom) -> x
-	| (Range (a_l, a_u), Range (b_l, b_u)) -> Range (min a_l b_l, max a_u b_u)
-(* !!! XƏBƏRDARLIQ: min/max is not considering NaN !!! *)	
-
-let merge_ro (a:range_el option) (b:range_el option) : (range_el option) =
-	match (a,b) with
-	| (None, b) -> b
-	| (a, None) -> a
-	| (Some a', Some b') -> Some (merge_r a' b')
-
 let join (a:t) (b:t) : t = 
-	let merge_els ((str:string), (rng_a:range_el)) (tbl:t) =
-		let merge_maybe (tbl:t) (str:string) (rng:range_el option) =
-			match rng with
+	let merge_els (str:string) (rng:Range_el.t) (cum:t) =
+		let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
+			match rng_opt with
 			| None -> tbl
 			| Some rng' -> Hashtbl.replace tbl str rng'; tbl
-		in merge_maybe tbl str (merge_ro (Some rng_a) (Hashtbl.find_opt str))
+		in replace_opt cum str (Range_el_opt.merge (Some rng) (Hashtbl.find_opt cum str))
 	in Hashtbl.fold merge_els a b
 
 let widening_threshold = 5
@@ -74,7 +80,7 @@ let widen ~prev ~next ~num_iters =
 		then join prev next
 	else next
 
-let pp fmt () =
+let pp fmt () = ()
 
 let initial:t = Hashtbl.create 100
 
