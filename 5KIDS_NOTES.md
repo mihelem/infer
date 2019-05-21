@@ -176,3 +176,338 @@ so what is `captured_by_ref_invariant_map`? First you build your `cfg` from your
 
 
 Looking at `CapturedByRefTransferFunctions.exec_instr` you see in particular how they extract from `instr` the Sil expressions `(Sil.exps_of_instr instr)` and then how they deal with the expressions themselves, e.g. `Exp.fold_captured`, `Exp.ignore_cast`... ). So now we know how to extract expressions from instructions, let's have a look at [Exp.ml](infer/src/IR/Exp.ml)
+__@bisbarello: as you were saying, with `let rec pp_ pe pp_t f e =` + all the rest we now should be able to print everything__
+
+But first, let's get a look at `AbstractInterpreter.ml`; first of all, about fixpoint calculation of recursive calls, we set the global widening threshold in `Config.ml`, by `let max_widens = 10000`. Well... 10000 seems fine.
+Then, what is the `Status` in `AbstractInterpreter.ml`?
+
+```OCaml
+module State = struct
+  type 'a t = {pre: 'a; post: 'a; visit_count: VisitCount.t}
+
+  let pre {pre} = pre
+
+  let post {post} = post
+end
+```
+
+mmh, `pre`, `post`... it should remind you about biabduction. 
+
+What about the ordering in which we analyse the global CFG, so the procedures?
+
+```OCaml
+module MakeRPO (T : TransferFunctions.SIL) =
+  MakeWithScheduler (Scheduler.ReversePostorder (T.CFG)) (T)
+module MakeWTO (T : TransferFunctions.SIL) = MakeUsingWTO (T)
+```
+
+WTO is Weak Topological Ordering. In a compositional setting, both choices are meaningful. But suppose we want to break modularity/compositionality, as we were discussing, just to do it and ... nothing more. Then, we'd better go to `Scheduler.ml`, just to discover that there is, by now, only a Reverse Post Order Scheduler; so, here is where we should put our hands in case we really wanted to change scheduling.
+
+`module AbstractInterpreterCommon (TransferFunctions : TransferFunctions.SIL)`
+
+In TransferFunctions.ml we find 
+
+```OCaml
+module type S = sig
+  module CFG : ProcCfg.S
+
+  module Domain : AbstractDomain.S
+
+  type extras
+
+  type instr
+
+  val exec_instr : Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
+
+  val pp_session_name : CFG.Node.t -> Format.formatter -> unit
+end
+
+module type SIL = sig
+  include S with type instr := Sil.instr
+end
+```
+
+Recall `let exec_instr astate _ _ instr = ` in liveness.ml: here we have its signature; for instr, we may choose between SIL or HIL, for HIL: 
+```OCaml
+module type HIL = sig
+  include S with type instr := HilInstr.t
+end
+```
+
+Now we have an almost complete picture of our transfer functions... why we define them, and how we have to do it.
+
+What about **nodes**? In ProcCfg.ml we find
+```OCaml
+module type Node = sig
+  type t
+
+  type id
+
+  val kind : t -> Procdesc.Node.nodekind
+
+  val id : t -> id
+
+  val hash : t -> int
+
+  val loc : t -> Location.t
+
+  val underlying_node : t -> Procdesc.Node.t
+
+  val of_underlying_node : Procdesc.Node.t -> t
+
+  val compare_id : id -> id -> int
+
+  val pp_id : F.formatter -> id -> unit
+
+  module IdMap : PrettyPrintable.PPMap with type key = id
+
+  module IdSet : PrettyPrintable.PPSet with type elt = id
+end
+```
+So you see that the underlying definitions are in Procdesc.ml; actually, there we find the module Node
+```OCaml
+module NodeKey = struct
+  type t = Caml.Digest.t
+
+  let to_string = Caml.Digest.to_hex
+
+  let compute node ~simple_key ~succs ~preds =
+    let v =
+      (simple_key node, List.rev_map ~f:simple_key succs, List.rev_map ~f:simple_key preds)
+    in
+    Utils.better_hash v
+
+
+  let of_frontend_node_key = Utils.better_hash
+end
+
+module Node = struct
+  type id = int [@@deriving compare]
+
+  let equal_id = [%compare.equal: id]
+
+  type stmt_nodekind =
+    | AssertionFailure
+    | BetweenJoinAndExit
+    | BinaryConditionalStmtInit
+    | BinaryOperatorStmt of string
+    | Call of string
+    | CallObjCNew
+    | ClassCastException
+    | ConditionalStmtBranch
+    | ConstructorInit
+    | CXXDynamicCast
+    | CXXNewExpr
+    | CXXStdInitializerListExpr
+    | CXXTypeidExpr
+    | DeclStmt
+    | DefineBody
+    | Destruction
+    | ExceptionHandler
+    | ExceptionsSink
+    | FallbackNode
+    | FinallyBranch
+    | GCCAsmStmt
+    | GenericSelectionExpr
+    | IfStmtBranch
+    | InitializeDynamicArrayLength
+    | InitListExp
+    | MessageCall of string
+    | MethodBody
+    | MonitorEnter
+    | MonitorExit
+    | ObjCCPPThrow
+    | OutOfBound
+    | ReturnStmt
+    | Skip of string
+    | SwitchStmt
+    | ThisNotNull
+    | Throw
+    | ThrowNPE
+    | UnaryOperator
+  [@@deriving compare]
+
+  type prune_node_kind =
+    | PruneNodeKind_ExceptionHandler
+    | PruneNodeKind_FalseBranch
+    | PruneNodeKind_InBound
+    | PruneNodeKind_IsInstance
+    | PruneNodeKind_MethodBody
+    | PruneNodeKind_NotNull
+    | PruneNodeKind_TrueBranch
+  [@@deriving compare]
+
+  type nodekind =
+    | Start_node
+    | Exit_node
+    | Stmt_node of stmt_nodekind
+    | Join_node
+    | Prune_node of bool * Sil.if_kind * prune_node_kind
+        (** (true/false branch, if_kind, comment) *)
+    | Skip_node of string
+  [@@deriving compare]
+
+  let equal_nodekind = [%compare.equal: nodekind]
+
+  (** a node *)
+  type t =
+    { id: id  (** unique id of the node *)
+    ; mutable dist_exit: int option  (** distance to the exit node *)
+    ; mutable wto_index: int
+    ; mutable exn: t list  (** exception nodes in the cfg *)
+    ; mutable instrs: Instrs.not_reversed_t  (** instructions for symbolic execution *)
+    ; kind: nodekind  (** kind of node *)
+    ; loc: Location.t  (** location in the source code *)
+    ; mutable preds: t list  (** predecessor nodes in the cfg *)
+    ; pname: Typ.Procname.t  (** name of the procedure the node belongs to *)
+    ; mutable succs: t list  (** successor nodes in the cfg *) }
+
+  let exn_handler_kind = Stmt_node ExceptionHandler
+
+  let exn_sink_kind = Stmt_node ExceptionsSink
+
+  let throw_kind = Stmt_node Throw
+
+  let dummy pname =
+    { id= 0
+    ; dist_exit= None
+    ; wto_index= Int.max_value
+    ; instrs= Instrs.empty
+    ; kind= Skip_node "dummy"
+    ; loc= Location.dummy
+    ; pname
+    ; succs= []
+    ; preds= []
+    ; exn= [] }
+
+
+  let compare node1 node2 = Int.compare node1.id node2.id
+
+  let hash node = Hashtbl.hash node.id
+
+  let equal = [%compare.equal: t]
+
+  (** Get the unique id of the node *)
+  let get_id node = node.id
+
+  let get_succs node = node.succs
+
+  type node = t
+
+  let pp_id f id = F.pp_print_int f id
+
+  let pp f node = pp_id f (get_id node)
+
+  module NodeSet = Caml.Set.Make (struct
+    type t = node
+
+    let compare = compare
+  end)
+
+  module IdMap = PrettyPrintable.MakePPMap (struct
+    type t = id
+
+    let compare = compare_id
+
+    let pp = pp_id
+  end)
+
+  let get_exn node = node.exn
+
+  (** Get the name of the procedure the node belongs to *)
+  let get_proc_name node = node.pname
+
+  (** Get the predecessors of the node *)
+  let get_preds node = node.preds
+
+  (** Get siblings *)
+  let get_siblings node =
+    get_preds node
+    |> ISequence.gen_sequence_list ~f:(fun parent ->
+           get_succs parent |> Sequence.of_list
+           |> Sequence.filter ~f:(fun n -> not (equal node n))
+           |> Sequence.Generator.of_sequence )
+    |> Sequence.Generator.run
+
+
+  (** Get the node kind *)
+  let get_kind node = node.kind
+
+  (** Get the instructions to be executed *)
+  let get_instrs node = node.instrs
+
+  (** Get the location of the node *)
+  let get_loc n = n.loc
+
+  (** Get the source location of the last instruction in the node *)
+  let get_last_loc n =
+    n |> get_instrs |> Instrs.last |> Option.value_map ~f:Sil.location_of_instr ~default:n.loc
+
+
+  let find_in_node_or_preds =
+    let rec find ~f visited nodes =
+      match nodes with
+      | node :: nodes when not (NodeSet.mem node visited) -> (
+          let instrs = get_instrs node in
+          match Instrs.find_map ~f:(f node) instrs with
+          | Some res ->
+              Some res
+          | None ->
+              let nodes = get_preds node |> List.rev_append nodes in
+              let visited = NodeSet.add node visited in
+              find ~f visited nodes )
+      | _ :: nodes ->
+          find ~f visited nodes
+      | _ ->
+          None
+    in
+    fun start_node ~f -> find ~f NodeSet.empty [start_node]
+
+
+  let get_distance_to_exit node = node.dist_exit
+
+  let get_wto_index node = node.wto_index
+
+  (** Append the instructions to the list of instructions to execute *)
+  let append_instrs node instrs =
+    if instrs <> [] then node.instrs <- Instrs.append_list node.instrs instrs
+
+
+  (** Map and replace the instructions to be executed *)
+  let replace_instrs node ~f =
+    let instrs' = Instrs.map_changed ~equal:phys_equal node.instrs ~f:(f node) in
+    if phys_equal instrs' node.instrs then false
+    else (
+      node.instrs <- instrs' ;
+      true )
+
+
+  (* Skipping pretty printing... **)
+
+  (** simple key for a node: just look at the instructions *)
+  let simple_key node =
+    let add_instr instr =
+      match instr with
+      | Sil.Load _ ->
+          Some 1
+      | Sil.Store _ ->
+          Some 2
+      | Sil.Prune _ ->
+          Some 3
+      | Sil.Call _ ->
+          Some 4
+      | Sil.Metadata _ ->
+          None
+    in
+    get_instrs node
+    |> IContainer.rev_filter_map_to_list ~fold:Instrs.fold ~f:add_instr
+    |> Utils.better_hash
+
+
+  (** key for a node: look at the current node, successors and predecessors *)
+  let compute_key node =
+    let succs = get_succs node in
+    let preds = get_preds node in
+    NodeKey.compute node ~simple_key ~succs ~preds
+end
+```

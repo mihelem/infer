@@ -60,6 +60,11 @@ let all_checkers =
   ; { name= "eradicate"
     ; active= Config.eradicate
     ; callbacks= [(Procedure Eradicate.callback_eradicate, Language.Java)] }
+  ; { name= "floating"
+    ; active= true      (* TODO: Add Config.floating **)
+    ; callbacks= 
+      [(Procedure Floatings.checker, Language.Clang)
+      ;(Procedure Floatings.checker, Language.Java) ] }
   ; { name= "fragment retains view"
     ; active= Config.fragment_retains_view
     ; callbacks=

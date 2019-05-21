@@ -38,7 +38,17 @@ module Range_el = struct
 		match (a,b) with
 		| (Bottom, x) | (x, Bottom) -> x
 		| (Range (a_l, a_u), Range (b_l, b_u)) -> Range (min_nan a_l b_l, max_nan a_u b_u)
-	(* !!! XƏBƏRDARLIQ: min/max is not considering NaN !!! *)	
+	(* !!! XƏBƏRDARLIQ: min/max is now considering NaN !!! *)	
+
+	let constrain (base:t) (constr:t) : t =
+		match (base,constr) with
+		| (Bottom, _) | (_, Bottom) -> Bottom
+		| (Range (a_l, a_u), Range (b_l, b_u)) -> 
+			let canonic_range (rng:t) =
+				match rng with
+				| Range (l,u) when eq_nan (min_nan l u) l -> rng
+				| _ -> Bottom
+			in canonic_range (Range (max a_l b_l, min a_u b_u))
 end
 
 module Range_el_opt = struct
@@ -55,23 +65,40 @@ module Range_el_opt = struct
 		| (None, b) -> b
 		| (a, None) -> a
 		| (Some a', Some b') -> Some (Range_el.merge a' b')
+
+	let constrain (base:t) (constr:t) : t =
+		match (base,constr) with
+		| (None,constr) -> None
+		| (a,None) -> a
+		| (Some base',Some constr') -> Some (Range_el.constrain base' constr')
 end
 
-type t = (string, Range_el.t) Hashtbl.t
+(* (Ocaml) -- First steps to make this parametric... **)
+type key = string
+module Value = Range_el
+module Value_opt = Range_el_opt
+
+type t = (key, Value.t) Hashtbl.t
 
 let ( <= ) ~lhs ~rhs = 
-	let cmp (str:string) (rng:Range_el.t) (cum:bool) =
-		cum && Range_el_opt.((Some rng) <= Hashtbl.find_opt rhs str)
+	let cmp (k:key) (v:Value.t) (cum:bool) =
+		cum && Value_opt.((Some v) <= Hashtbl.find_opt rhs k)
 	in Hashtbl.fold cmp lhs true
 
-let join (a:t) (b:t) : t = 
-	let merge_els (str:string) (rng:Range_el.t) (cum:t) =
-		let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
-			match rng_opt with
+let combine (a:t) (b:t) ~combiner:combiner : t =
+	let combine_els (k:key) (v:Value.t) (cum:t) =
+		let replace_opt (tbl:t) (k:key) (v_opt:Value_opt.t) =
+			match v_opt with
 			| None -> tbl
-			| Some rng' -> Hashtbl.replace tbl str rng'; tbl
-		in replace_opt cum str (Range_el_opt.merge (Some rng) (Hashtbl.find_opt cum str))
-	in Hashtbl.fold merge_els a b
+			| Some v' -> Hashtbl.replace tbl k v'; tbl
+		in replace_opt cum k (combiner (Some v) (Hashtbl.find_opt cum k))
+	in Hashtbl.fold combine_els a b
+
+let join = combine ~combiner:Value_opt.merge
+
+(* constrain may be used when there is a Prune (a guard) *)
+let constrain = combine ~combiner:Value_opt.constrain
+
 
 let widening_threshold = 5
 
@@ -85,3 +112,23 @@ let pp fmt () = ()
 let initial:t = Hashtbl.create 100
 
 type summary = t
+
+(*
+let join (a:t) (b:t) : t = 
+	let merge_els (str:string) (rng:Range_el.t) (cum:t) =
+		let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
+			match rng_opt with
+			| None -> tbl
+			| Some rng' -> Hashtbl.replace tbl str rng'; tbl
+		in replace_opt cum str (Range_el_opt.merge (Some rng) (Hashtbl.find_opt cum str))
+	in Hashtbl.fold merge_els a b
+
+let constrain (bases:t) (constrs:t) : t = 
+	let constrain_els (str:string) (rng:Range_el.t) (cum:t) =
+		let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
+			match rng_opt with
+			| None -> tbl
+			| Some rng' -> Hashtbl.replace tbl str rng'; tbl
+		in replace_opt cum str (Range_el_opt.constrain (Some rng) (Hashtbl.find_opt cum str))
+	in Hashtbl.fold merge_els a b
+**)
