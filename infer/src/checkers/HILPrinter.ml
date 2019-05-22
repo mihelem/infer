@@ -27,9 +27,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   type extras = unit
 
   (** Take an abstract state and instruction, produce a new abstract state *)
-  let exec_instr _ _ _ instr =
-  	let pe=Pp.text in
-  		Logging.progress "HILPrinter: %a@\n" (Hil.pp_instr ~print_types:true pe) instr
+  let exec_instr _ _ _ (instr : HilInstr.t) =
+  	Logging.progress "HILPrinter: %a@\n" HilInstr.pp instr
 
   	(*
     match instr with
@@ -46,7 +45,7 @@ end
 
 module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)
 
-module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
+module Analyzer = LowerHil.MakeAbstractInterpreter (TransferFunctions (CFG))
 
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
 let checker (args:Callbacks.proc_callback_args) : Summary.t =
