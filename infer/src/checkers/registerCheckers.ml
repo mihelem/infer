@@ -69,6 +69,7 @@ let all_checkers =
     ; active= Config.fragment_retains_view
     ; callbacks=
         [(Procedure FragmentRetainsViewChecker.callback_fragment_retains_view, Language.Java)] }
+  ; {name= "HILPrinter"; active= true; callbacks= [(Procedure HILPrinter.checker, Language.Java)]}
   ; { name= "immutable cast"
     ; active= Config.immutable_cast
     ; callbacks= [(Procedure ImmutableChecker.callback_check_immutable_cast, Language.Java)] }
