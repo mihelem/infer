@@ -49,6 +49,6 @@ module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)
 module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
 
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
-let checker {Callbacks.summary; proc_desc; tenv} : Summary.t =
+let checker {summary:Callbacks.summary; proc_desc; tenv} : Summary.t =
   match Analyzer.compute_post (ProcData.make proc_desc tenv ()) ~initial:EmptyDomain.initial with
-  | None | Some _ -> Callbacks.summary
+  | None | Some _ -> summary
