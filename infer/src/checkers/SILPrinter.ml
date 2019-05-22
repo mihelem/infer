@@ -7,11 +7,11 @@ module F = Format
 module EmptyDomain = struct
 	type t = unit
 
-	let ( <= ) ~lhs:_ ~rhs:_ = assert false
+	let ( <= ) ~lhs:_ ~rhs:_ = false
 
-	let join _a _b = assert false
+	let join _a _b = _a
 
-	let widen ~prev:_ ~next:_ ~num_iters:_ = assert false
+	let widen ~prev ~next:_ ~num_iters:_ = prev
 
 	let pp fmt () = F.fprintf fmt "SIL Printer: status is empty!"
 
@@ -27,9 +27,9 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   type extras = unit
 
   (** Take an abstract state and instruction, produce a new abstract state *)
-  let exec_instr (astate : ResourceLeakDomain.t) {ProcData.pdesc= _; tenv= _} _ instr =
+  let exec_instr _ _ _ instr =
   	let pe=Pp.text in
-  		Logging.d_printfln_escaped "SILPrinter: %a@\n" (Sil.pp_instr ~print_types:true pe) instr
+  		Logging.progress "SILPrinter: %a@\n" (Sil.pp_instr ~print_types:true pe) instr
 
   	(*
     match instr with
@@ -44,20 +44,11 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   let pp_session_name _node fmt = F.pp_print_string fmt "SIL Printer"
 end
 
-module CFG = ProcCfg.(OneInstrPerNode (Normal))
+module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)
 
 module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
 
-(** Report an error when we have acquired more resources than we have released *)
-let report _post _summary (_proc_data : unit ProcData.t) = ()
-
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
-let checker {Callbacks.summary; proc_desc; tenv} : Summary.t =
-  let proc_data = ProcData.make proc_desc tenv () in
-  match Analyzer.compute_post proc_data ~initial:EmptyDomain.initial with
-  | Some post ->
-      report post summary proc_data
-  | None ->
-      L.(die InternalError)
-        "Analyzer failed to compute post for %a" Typ.Procname.pp
-        (Procdesc.get_proc_name proc_data.pdesc)
+let checker (args:Callbacks.proc_callback_args) : Summary.t =
+  match Analyzer.compute_post (ProcData.make args.proc_desc args.tenv ()) ~initial:EmptyDomain.initial with
+  | None | Some _ -> args.summary
