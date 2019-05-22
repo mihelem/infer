@@ -7,11 +7,11 @@ module F = Format
 module EmptyDomain = struct
 	type t = unit
 
-	let ( <= ) ~lhs:_ ~rhs:_ = assert false
+	let ( <= ) ~lhs:_ ~rhs:_ = false
 
-	let join _a _b = assert false
+	let join _a _b = _a
 
-	let widen ~prev:_ ~next:_ ~num_iters:_ = assert false
+	let widen ~prev ~next:_ ~num_iters:_ = prev
 
 	let pp fmt () = F.fprintf fmt "SIL Printer: status is empty!"
 
