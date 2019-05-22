@@ -50,5 +50,5 @@ module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
 
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
 let checker {Callbacks.summary; proc_desc; tenv} : Summary.t =
-  Analyzer.compute_post (ProcData.make proc_desc tenv ()) ~initial:EmptyDomain.initial;
-  Callbacks.summary
+  match Analyzer.compute_post (ProcData.make proc_desc tenv ()) ~initial:EmptyDomain.initial with
+  | None | Some _ -> Callbacks.summary
