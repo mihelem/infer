@@ -60,11 +60,11 @@ let all_checkers =
   ; { name= "eradicate"
     ; active= Config.eradicate
     ; callbacks= [(Procedure Eradicate.callback_eradicate, Language.Java)] }
-  ; { name= "floating"
+  (*; { name= "floating"
     ; active= true      (* TODO: Add Config.floating **)
     ; callbacks= 
       [(Procedure Floatings.checker, Language.Clang)
-      ;(Procedure Floatings.checker, Language.Java) ] }
+      ;(Procedure Floatings.checker, Language.Java) ] } **)
   ; { name= "fragment retains view"
     ; active= Config.fragment_retains_view
     ; callbacks=
@@ -108,6 +108,7 @@ let all_checkers =
             Procedure ResourceLeaks.checker
           , Language.Java ) ] }
   ; {name= "litho"; active= Config.litho; callbacks= [(Procedure Litho.checker, Language.Java)]}
+  ; {name= "SILPrinter"; active= true; callbacks= [(Procedure SILPrinter.checker, Language.Java)]}
   ; {name= "SIOF"; active= Config.siof; callbacks= [(Procedure Siof.checker, Language.Clang)]}
   ; { name= "uninitialized variables"
     ; active= Config.uninit

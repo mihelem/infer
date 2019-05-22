@@ -1,8 +1,8 @@
 (* Copyright (c) 2019-present 5Kids *)
 
-(*open! IStd
+open! IStd
 module F = Format
-*)
+
 (* The following min, max, eq functions cope with the sign of 0. and with NaN *)
 let min_nan (a:float) (b:float) : float = 
 	match (classify_float a, classify_float b) with
