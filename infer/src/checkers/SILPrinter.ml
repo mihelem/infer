@@ -4,7 +4,7 @@
 open! IStd
 module F = Format
 
-module EmptyDomain =
+module EmptyDomain = struct
 	type t = unit
 
 	let ( <= ) ~lhs:_ ~rhs:_ = assert false
