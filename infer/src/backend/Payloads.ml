@@ -15,7 +15,6 @@ type t =
   ; buffer_overrun_checker: BufferOverrunCheckerSummary.t option
   ; class_loads: ClassLoadsDomain.summary option
   ; cost: CostDomain.summary option
- (* ; floatings: FloatingDomain.summary option  **)
   ; lab_resource_leaks: ResourceLeakDomain.summary option
   ; litho: LithoDomain.t option
   ; pulse: PulseSummary.t option
@@ -34,7 +33,6 @@ let pp pe fmt
     ; buffer_overrun_checker
     ; class_loads
     ; cost
-(*    ; floatings **)
     ; lab_resource_leaks
     ; litho
     ; pulse
@@ -66,8 +64,6 @@ let pp pe fmt
     cost 
     (pp_opt "Litho" LithoDomain.pp) 
     litho
-    (*(pp_opt "Floatings" FloatingDomain.pp)
-    floatings**)
     (pp_opt "Pulse" PulseSummary.pp) 
     pulse
     (pp_opt "Purity" PurityDomain.pp_summary)
@@ -93,7 +89,6 @@ let empty =
   ; buffer_overrun_checker= None
   ; class_loads= None
   ; cost= None
-  (*; floatings= None **)
   ; lab_resource_leaks= None
   ; litho= None
   ; pulse= None
