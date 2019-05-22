@@ -1,10 +1,10 @@
-(*  TODO : bisbarello, write your SIL printer here ? ^_^ **)
-(*  UPDATE : starting for you  <:(  **)
+(**  TODO : bisbarello, write your SIL printer here ? ^_^ **)
+(**  UPDATE : starting for you  <:(  **)
 
 open! IStd
 module F = Format
 
-module Domain =
+module EmptyDomain =
 	type t = unit
 
 	let ( <= ) ~lhs:_ ~rhs:_ = assert false
@@ -22,7 +22,7 @@ end
 
 module TransferFunctions (CFG : ProcCfg.S) = struct
   module CFG = CFG
-  module Domain = Domain
+  module Domain = EmptyDomain
 
   type extras = unit
 
@@ -54,7 +54,7 @@ let report _post _summary (_proc_data : unit ProcData.t) = ()
 (* Callback for invoking the checker from the outside--registered in RegisterCheckers *)
 let checker {Callbacks.summary; proc_desc; tenv} : Summary.t =
   let proc_data = ProcData.make proc_desc tenv () in
-  match Analyzer.compute_post proc_data ~initial:Domain.initial with
+  match Analyzer.compute_post proc_data ~initial:EmptyDomain.initial with
   | Some post ->
       report post summary proc_data
   | None ->
