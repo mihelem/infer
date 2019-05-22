@@ -29,7 +29,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   (** Take an abstract state and instruction, produce a new abstract state *)
   let exec_instr _ _ _ instr =
   	let pe=Pp.text in
-  		Logging.d_printfln_escaped "SILPrinter: %a@\n" (Sil.pp_instr ~print_types:true pe) instr
+  		Logging.progress "SILPrinter: %a@\n" (Sil.pp_instr ~print_types:true pe) instr
 
   	(*
     match instr with
