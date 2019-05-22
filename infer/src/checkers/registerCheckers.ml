@@ -69,7 +69,11 @@ let all_checkers =
     ; active= Config.fragment_retains_view
     ; callbacks=
         [(Procedure FragmentRetainsViewChecker.callback_fragment_retains_view, Language.Java)] }
-  ; {name= "HILPrinter"; active= true; callbacks= [(Procedure HILPrinter.checker, Language.Java)]}
+  ; { name= "HILPrinter"; 
+      active= true; 
+      callbacks= 
+        [(Procedure HILPrinter.checker, Language.Java)
+        ;(Procedure HILPrinter.checker, Language.Clang)] }
   ; { name= "immutable cast"
     ; active= Config.immutable_cast
     ; callbacks= [(Procedure ImmutableChecker.callback_check_immutable_cast, Language.Java)] }
@@ -108,9 +112,13 @@ let all_checkers =
                interprocedural later on *)
             Procedure ResourceLeaks.checker
           , Language.Java ) ] }
-  ; {name= "litho"; active= Config.litho; callbacks= [(Procedure Litho.checker, Language.Java)]}
-  ; {name= "SILPrinter"; active= true; callbacks= [(Procedure SILPrinter.checker, Language.Java)]}
-  ; {name= "SIOF"; active= Config.siof; callbacks= [(Procedure Siof.checker, Language.Clang)]}
+  ; { name= "litho"; active= Config.litho; callbacks= [(Procedure Litho.checker, Language.Java)]}
+  ; { name= "SILPrinter"
+    ; active= true
+    ; callbacks= 
+      [(Procedure SILPrinter.checker, Language.Java)
+      ;(Procedure SILPrinter.checker, Language.Clang)] }
+  ; { name= "SIOF"; active= Config.siof; callbacks= [(Procedure Siof.checker, Language.Clang)]}
   ; { name= "uninitialized variables"
     ; active= Config.uninit
     ; callbacks= [(Procedure Uninit.checker, Language.Clang)] }
