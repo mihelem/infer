@@ -60,17 +60,17 @@ let all_checkers =
   ; { name= "eradicate"
     ; active= Config.eradicate
     ; callbacks= [(Procedure Eradicate.callback_eradicate, Language.Java)] }
-  (*; { name= "floating"
+  ; { name= "floating"
     ; active= true      (* TODO: Add Config.floating **)
     ; callbacks= 
       [(Procedure Floatings.checker, Language.Clang)
-      ;(Procedure Floatings.checker, Language.Java) ] } **)
+      ;(Procedure Floatings.checker, Language.Java) ] }
   ; { name= "fragment retains view"
     ; active= Config.fragment_retains_view
     ; callbacks=
         [(Procedure FragmentRetainsViewChecker.callback_fragment_retains_view, Language.Java)] }
   ; { name= "HILPrinter"; 
-      active= true; 
+      active= false; 
       callbacks= 
         [(Procedure HILPrinter.checker, Language.Java)
         ;(Procedure HILPrinter.checker, Language.Clang)] }

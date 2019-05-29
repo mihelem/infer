@@ -106,7 +106,7 @@ end)
 (** Convert a string to a name *)
 let string_to_name = Name.from_string
 
-(** Convert a name to a string. *)
+(** Convert a name to a string *)
 let name_to_string = Name.to_string
 
 (** {2 Functions and Hash Tables for Managing Stamps} *)
@@ -122,7 +122,7 @@ module NameGenerator = struct
 
   let create () : t = NameHash.create 17
 
-  (** Map from names to stamps. *)
+  (** Map from names to stamps *)
   let name_map = ref (create ())
 
   let get_current () = !name_map
@@ -132,7 +132,7 @@ module NameGenerator = struct
   (** Reset the name generator *)
   let reset () = name_map := create ()
 
-  (** Create a fresh identifier with the given kind and name. *)
+  (** Create a fresh identifier with the given kind and name *)
   let create_fresh_ident kind name =
     let stamp =
       try
@@ -144,7 +144,7 @@ module NameGenerator = struct
     {kind; name; stamp}
 
 
-  (** Make sure that fresh ids after whis one will be with different stamps *)
+  (** Make sure that fresh ids after this one will be with different stamps *)
   let update_name_hash name stamp =
     try
       let curr_stamp = NameHash.find !name_map name in
@@ -178,7 +178,7 @@ let create kind stamp = create_with_stamp kind (standard_name kind) stamp
 (** Generate a normal identifier with the given name and stamp *)
 let create_normal name stamp = create_with_stamp KNormal name stamp
 
-(** Create a fresh identifier with default name for the given kind. *)
+(** Create a fresh identifier with default name for the given kind *)
 let create_fresh kind = NameGenerator.create_fresh_ident kind (standard_name kind)
 
 let create_fresh_specialized_with_blocks kind =
@@ -216,14 +216,14 @@ let update_name_generator ids =
   List.iter ~f:upd ids
 
 
-(** Generate a normal identifier whose name encodes a path given as a string. *)
+(** Generate a normal identifier whose name encodes a path given as a string *)
 let create_path pathstring =
   create_normal (string_to_name ("%path%" ^ pathstring)) path_ident_stamp
 
 
 (** {2 Pretty Printing} *)
 
-(** Pretty print an identifier. *)
+(** Pretty print an identifier *)
 let pp f id =
   if has_kind id KNone then F.pp_print_char f '_'
   else
@@ -232,10 +232,10 @@ let pp f id =
     F.fprintf f "%s%s$%d" prefix base_name id.stamp
 
 
-(** Convert an identifier to a string. *)
+(** Convert an identifier to a string *)
 let to_string id = F.asprintf "%a" pp id
 
-(** Pretty print a name. *)
+(** Pretty print a name *)
 let pp_name f name = F.pp_print_string f (name_to_string name)
 
 module HashQueue = Hash_queue.Make (struct

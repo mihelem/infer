@@ -1,7 +1,9 @@
 (* Copyright (c) 2019-present 5Kids *)
 
 open! IStd
+open! Float
 module F = Format
+module Hashtbl = Caml.Hashtbl
 
 (* The following min, max, eq functions cope with the sign of 0. and with NaN *)
 let min_nan (a:float) (b:float) : float = 
@@ -18,9 +20,13 @@ let max_nan (a:float) (b:float) : float =
 
 let eq_nan (a:float) (b:float) : bool =
   match (classify_float a, classify_float b) with
-  | (FP_nan, x) | (x, FP_nan) -> x=FP_nan 
+  | (FP_nan, FP_nan) -> true
+  | (FP_nan, _)
+  | (_, FP_nan) -> false 
   | (FP_zero, FP_zero) -> (copysign 1. a) = (copysign 1. b)
   | _ -> a=b
+
+(** Add pp or unneeded? *)
 
 module Range_el = struct
   type t = 
@@ -51,6 +57,8 @@ module Range_el = struct
       in canonic_range (Range (max a_l b_l, min a_u b_u))
 end
 
+let all_R = Range_el.Range (neg_infinity, infinity)
+
 module Range_el_opt = struct
   type t = Range_el.t option
 
@@ -71,47 +79,64 @@ module Range_el_opt = struct
     | (None,constr) -> None
     | (a,None) -> a
     | (Some base',Some constr') -> Some (Range_el.constrain base' constr')
+(** Naive approach, again... Purpose: testing the framework! *)
+(** TODO: implement the table from Bagnara's paper *)
+  let plus (a:t) (b:t) : t =
+    match (a,b) with
+    | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u))) 
+        -> Some (Range_el.Range (a_l+b_l, a_u+b_u))
+    | _ -> None
+
+  let minus (a:t) (b:t) : t =
+    match (a,b) with
+    | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u))) 
+        -> Some (Range_el.Range (a_l-b_u, a_u-b_l))
+    | _ -> None
 end
 
 (* (Ocaml) -- First steps to make this parametric... **)
+(**
 type key = string
 module Value = Range_el
-module Value_opt = Range_el_opt
+module Value_opt = Range_el_opt *)
 
-type t = (key, Value.t) Hashtbl.t
+type t = (string, Range_el.t) Hashtbl.t
+let find_opt tbl k = Hashtbl.find_opt tbl k
+let add tbl k v = Hashtbl.add tbl k v
+let replace tbl k v = Hashtbl.replace tbl k v
+
+type summary = t
 
 let ( <= ) ~lhs ~rhs = 
-  let cmp (k:key) (v:Value.t) (cum:bool) =
-    cum && Value_opt.((Some v) <= Hashtbl.find_opt rhs k)
+  let cmp (k:string) (v:Range_el.t) (cum:bool) =
+    cum && Range_el_opt.(<=) (Some v) (Hashtbl.find_opt rhs k)
   in Hashtbl.fold cmp lhs true
 
 let combine (a:t) (b:t) ~combiner:combiner : t =
-  let combine_els (k:key) (v:Value.t) (cum:t) =
-    let replace_opt (tbl:t) (k:key) (v_opt:Value_opt.t) =
+  let combine_els (k:string) (v:Range_el.t) (cum:t) =
+    let replace_opt (tbl:t) (k:string) (v_opt:Range_el_opt.t) =
       match v_opt with
       | None -> tbl
       | Some v' -> Hashtbl.replace tbl k v'; tbl
     in replace_opt cum k (combiner (Some v) (Hashtbl.find_opt cum k))
   in Hashtbl.fold combine_els a b
 
-let join = combine ~combiner:Value_opt.merge
+let join = combine ~combiner:Range_el_opt.merge
 
 (* constrain may be used when there is a Prune (a guard) *)
-let constrain = combine ~combiner:Value_opt.constrain
+let constrain = combine ~combiner:Range_el_opt.constrain
 
-
-let widening_threshold = 5
+let widening_threshold = 5          (** CHECK *)
 
 let widen ~prev ~next ~num_iters = 
-  if num_iters<widening_threshold 
+  join prev next
+(**  if num_iters<widening_threshold   
     then join prev next
-  else next
+  else next *)
 
-let pp fmt () = ()
+let pp _ _ = ()
 
 let initial:t = Hashtbl.create 100
-
-type summary = t
 
 (*
 let join (a:t) (b:t) : t = 

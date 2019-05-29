@@ -19,6 +19,7 @@ let source_dirs =
        ; "bufferoverrun"
        ; "checkers"
        ; "concurrency"
+       ; "floatings"
        ; "integration"
        ; "labs"
        ; "nullsafe"

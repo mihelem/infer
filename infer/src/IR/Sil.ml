@@ -420,19 +420,30 @@ let pp_instr ~print_types pe0 f instr =
   color_wrapper pe0 f instr ~f:(fun pe f instr ->
       match instr with
       | Load (id, e, t, loc) ->
-          F.fprintf f "%a=*%a:%a [%a]" Ident.pp id (pp_exp_printenv ~print_types pe) e (pp_typ pe0)
-            t Location.pp loc
+          F.fprintf f "LOAD %a=*%a:%a [%a]" 
+            Ident.pp id 
+            (pp_exp_printenv ~print_types pe) e 
+            (pp_typ pe0) t
+            Location.pp loc
       | Store (e1, t, e2, loc) ->
-          F.fprintf f "*%a:%a=%a [%a]" (pp_exp_printenv ~print_types pe) e1 (pp_typ pe0) t
-            (pp_exp_printenv ~print_types pe) e2 Location.pp loc
+          F.fprintf f "STORE *%a:%a=%a [%a]"
+            (pp_exp_printenv ~print_types pe) e1
+            (pp_typ pe0) t
+            (pp_exp_printenv ~print_types pe) e2 
+            Location.pp loc
       | Prune (cond, loc, true_branch, _) ->
-          F.fprintf f "PRUNE(%a, %b); [%a]" (pp_exp_printenv ~print_types pe) cond true_branch
+          F.fprintf f "PRUNE(%a, %b); [%a]" 
+            (pp_exp_printenv ~print_types pe) cond 
+            true_branch
             Location.pp loc
       | Call ((id, _), e, arg_ts, loc, cf) ->
+          F.fprintf f "CALL " ;
           F.fprintf f "%a=" Ident.pp id ;
-          F.fprintf f "%a(%a)%a [%a]" (pp_exp_printenv ~print_types pe) e
-            (Pp.comma_seq (pp_exp_typ pe))
-            arg_ts CallFlags.pp cf Location.pp loc
+          F.fprintf f "%a(%a)%a [%a]" 
+            (pp_exp_printenv ~print_types pe) e
+            (Pp.comma_seq (pp_exp_typ pe)) arg_ts 
+            CallFlags.pp cf 
+            Location.pp loc
       | Metadata metadata ->
           pp_instr_metadata pe0 f metadata )
 
