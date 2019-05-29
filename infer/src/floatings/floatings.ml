@@ -59,7 +59,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
           Domain.add astate pvar_string Domain.all_R; 
           Some Domain.all_R
       | Some rng -> Some rng)
-    | BinOp (op, e1, e2) -> (match (op : Binop.t) with
+    | Exp.BinOp (op, e1, e2) -> (match (op : Binop.t) with
       | PlusA _ -> Domain.Range_el_opt.plus (apply_exp astate e1) (apply_exp astate e2)
       | MinusA _ -> Domain.Range_el_opt.minus (apply_exp astate e1) (apply_exp astate e2)
       | Mult _ -> Domain.Range_el_opt.mult (apply_exp astate e1) (apply_exp astate e2)
@@ -82,6 +82,24 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         | Some rng -> Domain.replace astate (Pvar.to_string pvar) rng
         | None -> ())
       | _ -> ())
+    (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
+    | Sil.Prune (cond_e, loc, true_branch, kind) -> 
+      (match cond_e with
+      | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
+        let pvar_string = Pvar.to_string pvar in
+        let rng = Domain.find_opt astate pvar_string in
+        (match ((op : Binop.t), (true_branch : bool)) with
+        | (Lt, true) | (Ge, false) | (Le, true) | (Gt, false) ->
+          let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_left (apply_exp astate e)) in
+          (match print_range new_rng with
+          | Some new_rng'-> Domain.replace astate pvar_string new_rng'
+          | _ -> () )          
+        | (Gt, true) | (Le, false) | (Ge, true) | (Lt, false) ->
+          let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_right (apply_exp astate e)) in
+          (match print_range new_rng with
+          | Some new_rng' -> Domain.replace astate pvar_string new_rng'
+          | _ -> () ))
+      | _ -> ())
 (*)
       -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
         (Exp.pp_printenv ~print_types:true Pp.text) e1
@@ -94,7 +112,6 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     astate
 
     (** 
-    | Sil.Prune (cond_e, loc, true_branch, kind)
     | Sil.Call ((id, id_t), e, arg_ts, loc, cf)
     | Sil.Metadata metadata -> astate *)
 (**

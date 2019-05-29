@@ -31,6 +31,8 @@ module Range_el_opt : sig
   val minus : t -> t -> t
   val mult : t -> t -> t
   val div : t -> t -> t
+  val open_left : t -> t
+  val open_right : t -> t
 end
 
 val find_opt : t -> string -> Range_el_opt.t

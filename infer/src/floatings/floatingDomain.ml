@@ -113,6 +113,17 @@ module Range_el_opt = struct
         | [true; false] when not (a_l=0. || a_u=0.) -> Some all_R
         | _ -> Some (Range_el.Range (nan, nan)))
     | _ -> None  
+
+  let open_left (a:t) : t =
+    match a with
+    | Some (Range_el.Range (l, r)) when not (eq_nan l nan) -> Some (Range_el.Range (neg_infinity, r))
+    | _ -> a
+
+  let open_right (a:t) : t =
+    match a with
+    | Some (Range_el.Range (l, r)) when not (eq_nan r nan) -> Some (Range_el.Range (l, infinity))
+    | _ -> a
+
 end
 
 (* (Ocaml) -- First steps to make this parametric... **)
