@@ -1,3 +1,4 @@
+(*      InferNaL - Not a Linter     *)
 (* Copyright (c) 2019-present 5Kids *)
 
 open! IStd
@@ -31,11 +32,15 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
 
   type extras = ProcData.no_extras
 
+  let print_instr (instr : Sil.instr) : Sil.instr =
+    L.progress "Floatings: %a --> " (Sil.pp_instr ~print_types:true Pp.text) instr;
+    instr
+
   let print_range (rng : Domain.Range_el_opt.t) : Domain.Range_el_opt.t =
     (match rng with
-    | Some (Domain.Range_el.Range (l,u)) -> Logging.progress "Floatings: [%f,%f]\n" l u
-    | Some (Domain.Range_el.Bottom) -> Logging.progress "Floatings: []\n"
-    | None -> Logging.progress "Floatings: None\n");
+    | Some (Domain.Range_el.Range (l,u)) -> L.progress " [%f,%f]" l u
+    | Some (Domain.Range_el.Bottom) -> L.progress " []"
+    | None -> L.progress " None");
     rng
 
   let rec apply_exp (astate : Domain.t) (e : Exp.t) : Domain.Range_el_opt.t =
@@ -46,8 +51,13 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | None -> Domain.add astate id_string Domain.all_R; Some Domain.all_R
       | Some rng -> Some rng)
     | Exp.Const c -> (match c with
-      | Const.Cfloat fl -> print_range (Some (Domain.Range_el.Range (fl,fl)))
+      | Const.Cfloat fl -> Some (Domain.Range_el.Range (fl,fl))
       | _ -> None)
+    | Exp.Lvar pvar -> let pvar_string = Pvar.to_string pvar in
+    (match (Domain.find_opt astate pvar_string) with
+      | None -> Logging.progress "?!? Pvar not found in table!! ?!?";
+          Domain.add astate pvar_string Domain.all_R; Some Domain.all_R
+      | Some rng -> Some rng)
     | BinOp (op, e1, e2) -> (match (op : Binop.t) with
       | PlusA _ -> Domain.Range_el_opt.plus (apply_exp astate e1) (apply_exp astate e2)
       | MinusA _ -> Domain.Range_el_opt.minus (apply_exp astate e1) (apply_exp astate e2)
@@ -58,20 +68,28 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
-  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) instr = 
-    (match (instr : Sil.instr) with
+  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
+    (match print_instr instr with
     | Sil.Load (id, e, t, loc) -> 
       (match print_range (apply_exp astate e) with
       | Some rng -> Domain.replace astate (Ident.to_string id) rng
       | None -> ())
-    | Sil.Store (e1, t, e2, loc) 
+    | Sil.Store (e1, t, e2, loc) ->
+      (match e1 with
+      | Exp.Lvar pvar -> 
+        (match print_range (apply_exp astate e2) with
+        | Some rng -> Domain.replace astate (Pvar.to_string pvar) rng
+        | None -> ())
+      | _ -> ())
+(*)
       -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
         (Exp.pp_printenv ~print_types:true Pp.text) e1
         (Sil.pp_exp_printenv ~print_types:true Pp.text) e1;
         (match e1 with
         | Exp.Lvar pvar -> Logging.progress "Floatings: STORED on Lvar %a\n" Pvar.pp_value pvar
-        | _ -> ())
+        | _ -> ()) *)
     | _ -> ()); 
+    L.progress "\n";
     astate
 
     (** 

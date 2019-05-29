@@ -114,7 +114,7 @@ let all_checkers =
           , Language.Java ) ] }
   ; { name= "litho"; active= Config.litho; callbacks= [(Procedure Litho.checker, Language.Java)]}
   ; { name= "SILPrinter"
-    ; active= true
+    ; active= false
     ; callbacks= 
       [(Procedure SILPrinter.checker, Language.Java)
       ;(Procedure SILPrinter.checker, Language.Clang)] }
