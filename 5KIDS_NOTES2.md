@@ -86,7 +86,7 @@ type kind =
 type t = {kind: kind; name: Name.t; stamp: int} [@@deriving compare]
 ```
 
-Actually I'd better tell you that pretty printing is built upon OCaml pretty printing module `Format`, you can get an intro [http://caml.inria.fr/resources/doc/guides/format.en.html](here); that's the reason for all such `@` in strings!
+Actually I'd better tell you that pretty printing is built upon OCaml pretty printing module `Format`, you can get an intro [here](http://caml.inria.fr/resources/doc/guides/format.en.html); that's the reason for all such `@` in strings!
 
 `Format.asprintf`:
 
@@ -173,7 +173,7 @@ type env =
   ; obj_sub: (Obj.t -> Obj.t) option  (** generic object substitution *) }
 ```
 
-Mmh, what is `Obj`? There is an interesting reading [https://v1.realworldocaml.org/v1/en/html/memory-representation-of-values.html](here), where they explain the actual memory layout of OCaml, and what is `Obj` module about. 
+Mmh, what is `Obj`? There is an interesting reading [here](https://v1.realworldocaml.org/v1/en/html/memory-representation-of-values.html), where they explain the actual memory layout of OCaml, and what is `Obj` module about. 
 That said, we focus on 
 ```OCaml
       if not (Exp.equal e0 e) then
