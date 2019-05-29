@@ -77,9 +77,9 @@ module Range_el_opt = struct
 
   let constrain (base:t) (constr:t) : t =
     match (base,constr) with
-    | (None,constr) -> None
-    | (a,None) -> a
-    | (Some base',Some constr') -> Some (Range_el.constrain base' constr')
+    | (None, constr) -> None
+    | (a, None) -> a
+    | (Some base', Some constr') -> Some (Range_el.constrain base' constr')
 (** Naive approach, again... Purpose: testing the framework! *)
 (** TODO: implement the table from Bagnara's paper *)
   let plus (a:t) (b:t) : t =
@@ -89,10 +89,30 @@ module Range_el_opt = struct
     | _ -> None
 
   let minus (a:t) (b:t) : t =
-    match (a,b) with
+    match (a, b) with
     | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u))) 
         -> Some (Range_el.Range (a_l-b_u, a_u-b_l))
     | _ -> None
+
+  let mult (a:t) (b:t) : t =
+    match (a, b) with
+    | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u)))
+        -> let extr = [a_l*.b_l ; a_l*.b_u ; a_u*.b_l ; a_u*.b_u]
+        in let (Some r_l, Some r_u) = ((List.reduce ~f:min_nan extr), (List.reduce ~f:max_nan extr))
+        in Some (Range_el.Range (r_l, r_u))
+    | _ -> None
+
+  let div (a:t) (b:t) : t =
+    match (a, b) with
+    | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u))) 
+        -> (let extr = [a_l/.b_l ; a_l/.b_u ; a_u/.b_l ; a_u/.b_u]
+        in match [(copysign 1. a_l) = (copysign 1. a_u); (copysign 1. b_l) = (copysign 1. b_u)] with
+        | [_; true] 
+          -> let (Some r_l, Some r_u) = ((List.reduce ~f:min_nan extr), (List.reduce ~f:max_nan extr))
+          in Some (Range_el.Range (r_l, r_u))
+        | [true; false] when not (a_l=0. || a_u=0.) -> Some all_R
+        | _ -> Some (Range_el.Range (nan, nan)))
+    | _ -> None  
 end
 
 (* (Ocaml) -- First steps to make this parametric... **)

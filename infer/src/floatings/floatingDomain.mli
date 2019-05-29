@@ -29,6 +29,8 @@ module Range_el_opt : sig
   val constrain : t -> t -> t
   val plus : t -> t -> t
   val minus : t -> t -> t
+  val mult : t -> t -> t
+  val div : t -> t -> t
 end
 
 val find_opt : t -> string -> Range_el_opt.t

@@ -33,7 +33,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   type extras = ProcData.no_extras
 
   let print_instr (instr : Sil.instr) : Sil.instr =
-    L.progress "Floatings: %a --> " (Sil.pp_instr ~print_types:true Pp.text) instr;
+    L.progress "Floatings: %a \t--> " (Sil.pp_instr ~print_types:true Pp.text) instr;
     instr
 
   let print_range (rng : Domain.Range_el_opt.t) : Domain.Range_el_opt.t =
@@ -54,15 +54,16 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | Const.Cfloat fl -> Some (Domain.Range_el.Range (fl,fl))
       | _ -> None)
     | Exp.Lvar pvar -> let pvar_string = Pvar.to_string pvar in
-    (match (Domain.find_opt astate pvar_string) with
-      | None -> Logging.progress "?!? Pvar not found in table!! ?!?";
-          Domain.add astate pvar_string Domain.all_R; Some Domain.all_R
+      (match (Domain.find_opt astate pvar_string) with
+      | None -> L.progress "?!? Pvar not found in table!! ?!?";
+          Domain.add astate pvar_string Domain.all_R; 
+          Some Domain.all_R
       | Some rng -> Some rng)
     | BinOp (op, e1, e2) -> (match (op : Binop.t) with
       | PlusA _ -> Domain.Range_el_opt.plus (apply_exp astate e1) (apply_exp astate e2)
       | MinusA _ -> Domain.Range_el_opt.minus (apply_exp astate e1) (apply_exp astate e2)
-      | Mult _
-      | Div
+      | Mult _ -> Domain.Range_el_opt.mult (apply_exp astate e1) (apply_exp astate e2)
+      | Div -> Domain.Range_el_opt.div (apply_exp astate e1) (apply_exp astate e2)
       | _ -> apply_exp astate e1 ) (** TODO *)
     | _ -> None
   
