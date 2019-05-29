@@ -31,13 +31,13 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
 
   type extras = ProcData.no_extras
 
-  (* val exec_instr : t -> Sil.instr -> Procdesc.Node.nodekind -> Typ.Procname.t -> Tenv.t -> t
-     input is the previous state, current instruction, current node kind, current procedure and
-      type environment.
-  **)
-  (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
-  astate _ _ instr
-  type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
+  let print_range (rng : Domain.Range_el_opt.t) : Domain.Range_el_opt.t =
+    (match rng with
+    | Some (Domain.Range_el.Range (l,u)) -> Logging.progress "Floatings: [%f,%f]\n" l u
+    | Some (Domain.Range_el.Bottom) -> Logging.progress "Floatings: []\n"
+    | None -> Logging.progress "Floatings: None\n");
+    rng
+
   let rec apply_exp (astate : Domain.t) (e : Exp.t) : Domain.Range_el_opt.t =
     match e with
     | Exp.Var id -> 
@@ -46,7 +46,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | None -> Domain.add astate id_string Domain.all_R; Some Domain.all_R
       | Some rng -> Some rng)
     | Exp.Const c -> (match c with
-      | Const.Cfloat fl -> Some (Domain.Range_el.Range (fl,fl))
+      | Const.Cfloat fl -> print_range (Some (Domain.Range_el.Range (fl,fl)))
       | _ -> None)
     | BinOp (op, e1, e2) -> (match (op : Binop.t) with
       | PlusA _ -> Domain.Range_el_opt.plus (apply_exp astate e1) (apply_exp astate e2)
@@ -56,14 +56,25 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> apply_exp astate e1 ) (** TODO *)
     | _ -> None
   
+  (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
+  type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
   let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) instr = 
-    match (instr : Sil.instr) with
+    (match (instr : Sil.instr) with
     | Sil.Load (id, e, t, loc) -> 
-      (match (apply_exp astate e) with
-      | Some rng -> Domain.replace astate (Ident.to_string id) rng; astate(* Ident.to_string id *)
-      | None -> astate)
-    | _ -> astate
-    (** | Sil.Store (e1, t, e2, loc)
+      (match print_range (apply_exp astate e) with
+      | Some rng -> Domain.replace astate (Ident.to_string id) rng
+      | None -> ())
+    | Sil.Store (e1, t, e2, loc) 
+      -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
+        (Exp.pp_printenv ~print_types:true Pp.text) e1
+        (Sil.pp_exp_printenv ~print_types:true Pp.text) e1;
+        (match e1 with
+        | Exp.Lvar pvar -> Logging.progress "Floatings: STORED on Lvar %a\n" Pvar.pp_value pvar
+        | _ -> ())
+    | _ -> ()); 
+    astate
+
+    (** 
     | Sil.Prune (cond_e, loc, true_branch, kind)
     | Sil.Call ((id, id_t), e, arg_ts, loc, cf)
     | Sil.Metadata metadata -> astate *)
