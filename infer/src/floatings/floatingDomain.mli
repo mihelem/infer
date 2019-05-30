@@ -46,6 +46,7 @@ val replace : t -> string -> Range_el.t -> unit
 val alias_find_opt : t -> string -> string option
 val alias_add : t -> string -> string -> unit
 val alias_replace : t -> string -> string -> unit
+val copy : t -> t
 
 type summary = t
 

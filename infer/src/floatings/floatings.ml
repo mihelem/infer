@@ -70,7 +70,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
-  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
+  let exec_instr (state : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
+    let astate = Domain.copy state in
     (match print_instr instr with
     | Sil.Load (id, e, t, loc) -> 
       (match print_range (apply_exp astate e) with
@@ -78,7 +79,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | None -> () );
       (match e with
       | Exp.Lvar pvar -> Domain.alias_replace astate (Ident.to_string id) (Pvar.to_string pvar);
-        L.progress "Registro %s come alias di %s  " (Ident.to_string id) (Pvar.to_string pvar)
+        L.progress " :: %s alias of %s  " (Ident.to_string id) (Pvar.to_string pvar)
       | _ -> () )
     | Sil.Store (e1, t, e2, loc) ->
       (match e1 with
@@ -89,12 +90,12 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, loc, true_branch, kind) -> 
-      let apply_constrain op (pvar_string_opt : string option) (e : Exp.t) =
+      let apply_constrain op is_true (pvar_string_opt : string option) (e : Exp.t) =
         match pvar_string_opt with
         | None -> ()
         | Some pvar_string ->
           (let rng = Domain.find_opt astate pvar_string in
-          match ((op : Binop.t), (true_branch : bool)) with
+          match ((op : Binop.t), (is_true : bool)) with
           | (Lt, true) | (Ge, false) | (Le, true) | (Gt, false) ->
             let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_left (apply_exp astate e)) in
             (match print_range new_rng with
@@ -108,9 +109,17 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       (match cond_e with
       | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
         let pvar_string = Pvar.to_string pvar in 
-        apply_constrain op (Some pvar_string) e
+        apply_constrain op true (Some pvar_string) e
       | Exp.BinOp (op, Exp.Var id, e) -> 
-        apply_constrain op (Domain.alias_find_opt astate (Ident.to_string id)) e
+        apply_constrain op true (Domain.alias_find_opt astate (Ident.to_string id)) e
+      | Exp.UnOp (Unop.LNot, e, _) ->
+        (match e with
+        | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
+          let pvar_string = Pvar.to_string pvar in 
+          apply_constrain op false (Some pvar_string) e
+        | Exp.BinOp (op, Exp.Var id, e) -> 
+          apply_constrain op false (Domain.alias_find_opt astate (Ident.to_string id)) e
+        | _ -> ())
       | _ -> ())
 (*
       -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 

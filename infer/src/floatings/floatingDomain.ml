@@ -142,6 +142,7 @@ let replace {ranges = tbl} k v = Hashtbl.replace tbl k v
 let alias_find_opt {aliases = tbl} k = Hashtbl.find_opt tbl k
 let alias_add {aliases = tbl} k v = Hashtbl.add tbl k v
 let alias_replace {aliases = tbl} k v = Hashtbl.replace tbl k v
+let copy {ranges; aliases} = {ranges = Hashtbl.copy ranges; aliases = Hashtbl.copy aliases}
 
 let ( <= ) ~lhs ~rhs = 
   let ({ranges = l}, {ranges = r}) = (lhs, rhs) in
