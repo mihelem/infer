@@ -44,7 +44,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     rng
 
   let rec apply_exp (astate : Domain.t) (e : Exp.t) : Domain.Range_el_opt.t =
-    match e with
+    let (ranges, aliases) = (Domain.get_ranges astate, Domain.get_aliases astate)
+    in match e with
     | Exp.Var id -> 
       let id_string = Ident.to_string id in
       (match (Domain.find_opt astate id_string) with
@@ -74,7 +75,11 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     | Sil.Load (id, e, t, loc) -> 
       (match print_range (apply_exp astate e) with
       | Some rng -> Domain.replace astate (Ident.to_string id) rng
-      | None -> ())
+      | None -> () );
+      (match e with
+      | Exp.Lvar pvar -> Domain.alias_replace astate (Ident.to_string id) (Pvar.to_string pvar);
+        L.progress "Registro %s come alias di %s  " (Ident.to_string id) (Pvar.to_string pvar)
+      | _ -> () )
     | Sil.Store (e1, t, e2, loc) ->
       (match e1 with
       | Exp.Lvar pvar -> 
@@ -84,23 +89,30 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, loc, true_branch, kind) -> 
+      let apply_constrain op (pvar_string_opt : string option) (e : Exp.t) =
+        match pvar_string_opt with
+        | None -> ()
+        | Some pvar_string ->
+          (let rng = Domain.find_opt astate pvar_string in
+          match ((op : Binop.t), (true_branch : bool)) with
+          | (Lt, true) | (Ge, false) | (Le, true) | (Gt, false) ->
+            let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_left (apply_exp astate e)) in
+            (match print_range new_rng with
+            | Some new_rng'-> Domain.replace astate pvar_string new_rng'
+            | _ -> () )          
+          | (Gt, true) | (Le, false) | (Ge, true) | (Lt, false) ->
+            let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_right (apply_exp astate e)) in
+            (match print_range new_rng with
+            | Some new_rng' -> Domain.replace astate pvar_string new_rng'
+            | _ -> () )) in
       (match cond_e with
       | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
-        let pvar_string = Pvar.to_string pvar in
-        let rng = Domain.find_opt astate pvar_string in
-        (match ((op : Binop.t), (true_branch : bool)) with
-        | (Lt, true) | (Ge, false) | (Le, true) | (Gt, false) ->
-          let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_left (apply_exp astate e)) in
-          (match print_range new_rng with
-          | Some new_rng'-> Domain.replace astate pvar_string new_rng'
-          | _ -> () )          
-        | (Gt, true) | (Le, false) | (Ge, true) | (Lt, false) ->
-          let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_right (apply_exp astate e)) in
-          (match print_range new_rng with
-          | Some new_rng' -> Domain.replace astate pvar_string new_rng'
-          | _ -> () ))
+        let pvar_string = Pvar.to_string pvar in 
+        apply_constrain op (Some pvar_string) e
+      | Exp.BinOp (op, Exp.Var id, e) -> 
+        apply_constrain op (Domain.alias_find_opt astate (Ident.to_string id)) e
       | _ -> ())
-(*)
+(*
       -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
         (Exp.pp_printenv ~print_types:true Pp.text) e1
         (Sil.pp_exp_printenv ~print_types:true Pp.text) e1;
@@ -111,6 +123,40 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     L.progress "\n";
     astate
 
+
+  let pp_session_name _node fmt = F.pp_print_string fmt "Floatings checker"
+end
+(* Just to check the framework interface! **)
+module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)
+
+module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
+
+(* let report_if_NaR = *)
+
+(* Register in RegisterCheckers *)
+let checker (args:Callbacks.proc_callback_args) : Summary.t =
+  match 
+    Analyzer.compute_post 
+      (ProcData.make_default args.proc_desc args.tenv) 
+      ~initial:FloatingDomain.initial with
+  | None | Some _ -> args.summary
+
+
+(* module CFG = ProcCfg.Normal **)
+(*
+module Analyzer = LowerHil.MakeAbstractInterpreter (TransferFunctions (CFG))
+module CheckerAnalyzer = AbstractInterpreter.MakeRPO (TransferFunctions (CheckerMode) (CFG))
+module CapturedByRefAnalyzer =
+  AbstractInterpreter.MakeRPO (CapturedByRefTransferFunctions (ProcCfg.Exceptional))
+**)
+    (* (instr : HilInstr.t) = *)
+    (* /IR/HilInstr.ml[i] *)
+    (* match instr with
+    | Assign (access_expr, AccessExpression rhs_access_expr, _loc) ->
+        ResourceLeakDomain.assign
+          (HilExp.AccessExpression.to_access_path access_expr)
+          (HilExp.AccessExpression.to_access_path rhs_access_expr)
+          astate *)
     (** 
     | Sil.Call ((id, id_t), e, arg_ts, loc, cf)
     | Sil.Metadata metadata -> astate *)
@@ -199,37 +245,3 @@ let rec pp_ pe pp_t f e =
         (pp_if (not (String.equal "" subt_s)) Subtype.pp "sub_t")
         subtype
 *)
-
-  let pp_session_name _node fmt = F.pp_print_string fmt "Floatings checker"
-end
-(* Just to check the framework interface! **)
-module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)
-
-module Analyzer = AbstractInterpreter.MakeWTO (TransferFunctions (CFG))
-
-(* let report_if_NaR = *)
-
-(* Register in RegisterCheckers *)
-let checker (args:Callbacks.proc_callback_args) : Summary.t =
-  match 
-    Analyzer.compute_post 
-      (ProcData.make_default args.proc_desc args.tenv) 
-      ~initial:FloatingDomain.initial with
-  | None | Some _ -> args.summary
-
-
-(* module CFG = ProcCfg.Normal **)
-(*
-module Analyzer = LowerHil.MakeAbstractInterpreter (TransferFunctions (CFG))
-module CheckerAnalyzer = AbstractInterpreter.MakeRPO (TransferFunctions (CheckerMode) (CFG))
-module CapturedByRefAnalyzer =
-  AbstractInterpreter.MakeRPO (CapturedByRefTransferFunctions (ProcCfg.Exceptional))
-**)
-    (* (instr : HilInstr.t) = *)
-    (* /IR/HilInstr.ml[i] *)
-    (* match instr with
-    | Assign (access_expr, AccessExpression rhs_access_expr, _loc) ->
-        ResourceLeakDomain.assign
-          (HilExp.AccessExpression.to_access_path access_expr)
-          (HilExp.AccessExpression.to_access_path rhs_access_expr)
-          astate *)

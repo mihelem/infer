@@ -123,7 +123,6 @@ module Range_el_opt = struct
     match a with
     | Some (Range_el.Range (l, r)) when not (eq_nan r nan) -> Some (Range_el.Range (l, infinity))
     | _ -> a
-
 end
 
 (* (Ocaml) -- First steps to make this parametric... **)
@@ -131,27 +130,35 @@ end
 type key = string
 module Value = Range_el
 module Value_opt = Range_el_opt *)
-
-type t = (string, Range_el.t) Hashtbl.t
-let find_opt tbl k = Hashtbl.find_opt tbl k
-let add tbl k v = Hashtbl.add tbl k v
-let replace tbl k v = Hashtbl.replace tbl k v
-
+type ranges_t = (string, Range_el.t) Hashtbl.t
+type aliases_t = (string, string) Hashtbl.t
+type t = {ranges : ranges_t; aliases : aliases_t}
 type summary = t
+let get_ranges {ranges} = ranges
+let get_aliases {aliases} = aliases
+let find_opt {ranges = tbl} k = Hashtbl.find_opt tbl k
+let add {ranges = tbl} k v = Hashtbl.add tbl k v
+let replace {ranges = tbl} k v = Hashtbl.replace tbl k v
+let alias_find_opt {aliases = tbl} k = Hashtbl.find_opt tbl k
+let alias_add {aliases = tbl} k v = Hashtbl.add tbl k v
+let alias_replace {aliases = tbl} k v = Hashtbl.replace tbl k v
 
 let ( <= ) ~lhs ~rhs = 
+  let ({ranges = l}, {ranges = r}) = (lhs, rhs) in
   let cmp (k:string) (v:Range_el.t) (cum:bool) =
-    cum && Range_el_opt.(<=) (Some v) (Hashtbl.find_opt rhs k)
-  in Hashtbl.fold cmp lhs true
+    cum && Range_el_opt.(<=) (Some v) (Hashtbl.find_opt r k)
+  in Hashtbl.fold cmp l true
 
-let combine (a:t) (b:t) ~combiner:combiner : t =
-  let combine_els (k:string) (v:Range_el.t) (cum:t) =
-    let replace_opt (tbl:t) (k:string) (v_opt:Range_el_opt.t) =
+(** TODO: combine aliases, if needed *)
+let combine ({ranges = a; aliases = aa}:t) ({ranges = b}:t) ~combiner:combiner : t =
+  let combine_els (k:string) (v:Range_el.t) (cum:ranges_t) =
+    let replace_opt (tbl:ranges_t) (k:string) (v_opt:Range_el_opt.t) =
       match v_opt with
       | None -> tbl
       | Some v' -> Hashtbl.replace tbl k v'; tbl
     in replace_opt cum k (combiner (Some v) (Hashtbl.find_opt cum k))
-  in Hashtbl.fold combine_els a b
+  in let ab = Hashtbl.fold combine_els a b
+  in {ranges = ab; aliases = aa}
 
 let join = combine ~combiner:Range_el_opt.merge
 
@@ -168,7 +175,7 @@ let widen ~prev ~next ~num_iters =
 
 let pp _ _ = ()
 
-let initial:t = Hashtbl.create 100
+let initial:t = {ranges = Hashtbl.create 100; aliases = Hashtbl.create 100}
 
 (*
 let join (a:t) (b:t) : t = 
