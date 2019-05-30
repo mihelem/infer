@@ -105,7 +105,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
             let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_right (apply_exp astate e)) in
             (match print_range new_rng with
             | Some new_rng' -> Domain.replace astate pvar_string new_rng'
-            | _ -> () )) in
+            | _ -> () )
+          | _ -> ()) in
       (match cond_e with
       | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
         let pvar_string = Pvar.to_string pvar in 
