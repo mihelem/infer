@@ -2,12 +2,10 @@
 (* Copyright (c) 2019-present 5Kids *)
 
 open! IStd
-open! Float
+
 module Hashtbl = Caml.Hashtbl
 
 include AbstractDomain.S  (* Why? *)
-
-(* val find_opt : ('a, 'b) Hashtbl.t -> 'a -> 'b option *)
 
 (** type t *)
 
