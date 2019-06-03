@@ -299,9 +299,9 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, loc, true_branch, kind) -> 
-      L.progress " \n    IN :::: "; Domain.print_only (!(!state_ref_ref)); L.progress "\n";
+    (**  L.progress " \n    IN :::: "; Domain.print_only (!(!state_ref_ref)); L.progress "\n"; *)
       state_ref_ref := ref (Constrain.apply astate cond_e); 
-      L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref))
+    (**  L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref)) *)
     | Sil.Call _ -> ()  (** This is OPALT's job ^_^ *)
     | Metadata metadata -> state_ref_ref := ref (Domain.copy astate); ());
     L.progress "\n";
