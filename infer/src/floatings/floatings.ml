@@ -99,20 +99,20 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | Ge -> Le
       | _ -> op
 
-    let is_c (op : Binop.t) : bool =
+    let _is_c (op : Binop.t) : bool =
       let open Binop in
       match op with
       | Lt | Le | Ge | Gt | Div | MinusA _ -> false
       | _ -> true     (** true means also not interested in the property *)
 
-    let do_binopt (op : Binop.t) (e1 : Exp.t) (e2 : Exp.t option) : Exp.t =
+    let _do_binopt (op : Binop.t) (e1 : Exp.t) (e2 : Exp.t option) : Exp.t =
       match e2 with
       | None -> e1
       | Some e2' -> Exp.BinOp (op, e1, e2')
 
   (** (e1 aop e2) cop e  --> ...  *)
     let simpl_bin_lhs (cop : Binop.t) (aop : Binop.t) (e1 : Exp.t) (e2 : Exp.t) (e : Exp.t) : Exp.t option =
-      let open Float in
+      (*let open Float in *)
       let f_zero = Exp.Const (Const.Cfloat 0.) in
       let f_nzero = Exp.Const (Const.Cfloat (-0.)) in
       match aop with
@@ -245,7 +245,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | Exp.BinOp (Binop.Eq, e1, e2) ->
         let rng = apply_exp (Domain.constrain in_d constr) e2 in
         Domain.id2t in_d e1 rng
-      | Exp.BinOp (Binop.Ne, e1, e2) ->
+      | Exp.BinOp (Binop.Ne, e1, _e2) ->
         Domain.id2t in_d e1 (Some Domain.all_R)
       | _ -> Logging.progress "\n 250 \n"; Domain.make_empty ~n:0 ()
 
@@ -265,11 +265,11 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
-  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
+  let exec_instr (astate : Domain.t) (_extr : extras ProcData.t) (_node : CFG.Node.t) (instr : Sil.instr) = 
     let state_ref = ref astate in
     let state_ref_ref = ref state_ref in
     ((match print_instr instr with
-    | Sil.Load (id, e, t, loc) -> 
+    | Sil.Load (id, e, _t, _loc) -> 
       (match print_range (apply_exp astate e) with
       | Some rng -> Domain.replace astate (Ident.to_string id) rng
       | None -> () );
@@ -277,7 +277,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | Exp.Lvar pvar -> Domain.alias_replace astate (Ident.to_string id) (Pvar.to_string pvar);
         L.progress " :: %s alias of %s  " (Ident.to_string id) (Pvar.to_string pvar)
       | _ -> () )
-    | Sil.Store (e1, t, e2, loc) ->
+    | Sil.Store (e1, _t, e2, _loc) ->
       (match e1 with
       | Exp.Lvar pvar -> 
         (match print_range (apply_exp astate e2) with
@@ -285,13 +285,24 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         | None -> ())
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
-    | Sil.Prune (cond_e, loc, true_branch, kind) -> 
-      state_ref_ref := ref (Constrain.apply astate cond_e); 
-      L.progress " \n    IN :::: "; Domain.print_only astate; L.progress "\n";
-      L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref))
+    | Sil.Prune (cond_e, _loc, _true_branch, _kind) -> 
+      state_ref_ref := ref (Constrain.apply astate cond_e); ()
+    (*  L.progress " \n    IN :::: "; Domain.print_only astate; L.progress "\n"; 
+      L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref)) *)
     | Sil.Call _ -> ()  (** This is OPALT's job ^_^ *)
-    | Sil.Metadata metadata -> state_ref_ref := ref (Domain.copy astate); ());
-    L.progress " \n    OUT :::: "; Domain.print_only astate;
+    | Sil.Metadata metadata -> 
+      (match metadata with
+      | Sil.ExitScope (vars, _loc) ->
+        let rm_var var =
+          match var with
+          | Var.LogicalVar id -> Domain.remove astate (Ident.to_string id)
+          | Var.ProgramVar _pvar -> ()  (* I want to be sure that it's sound *)
+        in
+        List.iter vars ~f:rm_var
+      | Sil.Skip -> state_ref_ref := ref (Domain.copy astate)
+      | _ -> () ));
+      (*| Sil.Abstract _loc -> ()(*state_ref_ref := ref (Domain.copy astate)*)*)
+    (*L.progress " \n    OUT :::: "; Domain.print_only astate; *)
     L.progress "\n";
     !(!state_ref_ref))
 

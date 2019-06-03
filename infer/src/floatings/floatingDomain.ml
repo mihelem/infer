@@ -86,8 +86,8 @@ module Range_el_opt = struct
   
   let merge (a:t) (b:t) : t =
     match (a,b) with
-    | (None, b) -> None
-    | (a, None) -> None
+    | (None, _) -> None
+    | (_, None) -> None
     | (Some a', Some b') -> Some (Range_el.merge a' b')
 
   let constrain (base:t) (constr:t) : t =
@@ -155,6 +155,7 @@ let get_aliases {aliases} = aliases
 let find_opt {ranges = tbl} k = Hashtbl.find_opt tbl k
 let add {ranges = tbl} k v = Hashtbl.add tbl k v
 let replace {ranges = tbl} k v = Hashtbl.replace tbl k v
+let remove d k = Hashtbl.remove d.ranges k; Hashtbl.remove d.aliases k
 let alias_find_opt {aliases = tbl} k = Hashtbl.find_opt tbl k
 let alias_add {aliases = tbl} k v = Hashtbl.add tbl k v
 let alias_replace {aliases = tbl} k v = Hashtbl.replace tbl k v
@@ -190,13 +191,13 @@ let id2t (in_d : t) (e : Exp.t) (rng : Range_el_opt.t) : t =
     | _ -> make_empty ~n:0 ())
 let print_only {ranges; aliases} : unit =
   let print_couple (k:string) (v:Range_el.t) =
-    (Logging.progress "%s " k(*; 
+    (Logging.progress "%s:" k; 
     match v with
     | Bottom -> Logging.progress "[] "
-    | Range (l,u) -> Logging.progress "[%f, %f] " l u*)) in
-  Hashtbl.iter print_couple ranges;
+    | Range (l,u) -> Logging.progress "[%f, %f] " l u) in
+  Hashtbl.iter print_couple ranges; Logging.progress " where ";
   let print_alias (k:string) (alias:string) =
-    Logging.progress " %s " k in
+    Logging.progress " %s<->%s" k alias in
     Hashtbl.iter print_alias aliases
 let print (in_d : t) : t =
   (print_only in_d);
@@ -223,7 +224,7 @@ let combine_copy (a:t) (b:t) ~combiner:combiner : t =
   Hashtbl.iter (fun k al -> Hashtbl.replace result.aliases k al) b.aliases;
   result
 
-let combine ({ranges = a; aliases = aa}:t) ({ranges = b; aliases = ba}:t) ~combiner:combiner : t =
+let combine ({ranges = a; aliases = aa}:t) ({ranges = b; aliases = _ba}:t) ~combiner:combiner : t =
   let f k rng ~tbl1 ~tbl2 =
     let v = combiner (Some rng) (Hashtbl.find_opt tbl2 k) in
     match v with
@@ -239,7 +240,10 @@ let merge_inplace = combine ~combiner:Range_el_opt.merge
 let constrain = combine_copy ~combiner:Range_el_opt.constrain
 let constrain_inplace = combine ~combiner:Range_el_opt.constrain
 
-let join a b = L.progress " JOIN\n";print_only a;L.progress " °°°° ";print_only b;L.progress " = "; print (merge a b)
+let join a b = 
+  L.progress " JOIN\n";print_only a;L.progress " °°°° ";print_only b;L.progress " = "; 
+  let ab = print (merge a b) in
+  L.progress "\n"; ab
 
 let max_iters = 5          (** CHECK *)
 
@@ -250,7 +254,7 @@ let widen ~prev ~next ~num_iters =
 
 let pp f _ = F.pp_print_string f "()"
 
-let pp_summary f {ranges;aliases} = 
+let pp_summary f {ranges;aliases=_aliases} = 
   let pp_k_rng k rng =
   (F.fprintf f "%s:" k;
   let open Range_el in

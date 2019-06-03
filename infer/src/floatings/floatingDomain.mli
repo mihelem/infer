@@ -41,6 +41,7 @@ val get_aliases : t -> aliases_t
 val find_opt : t -> string -> Range_el_opt.t
 val add : t -> string -> Range_el.t -> unit
 val replace : t -> string -> Range_el.t -> unit
+val remove : t -> string -> unit
 val alias_find_opt : t -> string -> string option
 val alias_add : t -> string -> string -> unit
 val alias_replace : t -> string -> string -> unit
