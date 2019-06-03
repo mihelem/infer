@@ -5,26 +5,14 @@ open! IStd
 module F = Format
 module L = Logging
 
-(** OPALT's job *)
-(**
 module Payload = SummaryPayload.Make (struct
   type t = FloatingDomain.summary
 
-  let update_payloads resources_payload (payloads : Payloads.t) =
-    {payloads with }
+  let update_payloads astate (payloads : Payloads.t) =
+    {payloads with floatings= Some astate}
 
-  let of_payloads {Payloads.} = 
+  let of_payloads (payloads : Payloads.t) = payloads.floatings
 end) 
-module Payload = SummaryPayload.Make (struct
-  type t = ResourceLeakDomain.summary
-
-  let update_payloads resources_payload (payloads : Payloads.t) =
-    {payloads with lab_resource_leaks= Some resources_payload}
-
-
-  let of_payloads {Payloads.lab_resource_leaks} = lab_resource_leaks
-end)
-*)
 
 module TransferFunctions (CFG : ProcCfg.S) = struct
   module CFG = CFG
@@ -44,7 +32,6 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     rng
 
   let rec apply_exp (astate : Domain.t) (e : Exp.t) : Domain.Range_el_opt.t =
-  (**  let (ranges, aliases) = (Domain.get_ranges astate, Domain.get_aliases astate) in *)
     match e with
     | Exp.Var id -> 
       let id_string = Ident.to_string id in
@@ -79,7 +66,6 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       Binop: Le, Lt, Ge, Gt, Eq, Ne
 *)
   module Constrain = struct
-  
   (** Logical Normalization *)
     let n_bop (op : Binop.t) : Binop.t =
       let open Binop in
@@ -241,7 +227,6 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       let es = symmetrize ep in
       catch_cmp (Some es)
 
-(** Sil.Prune (cond_e, loc, true_branch, kind) *)
     let rec to_ranges (in_d : Domain.t) (e : Exp.t) : Domain.t =
       match e with
       | Exp.BinOp (Binop.LAnd, e1, e2) -> 
@@ -272,7 +257,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         L.progress "%a => " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
         (* Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e')) *)
         let e'' = Domain.print (to_ranges in_d e') in
-        if Domain.(in_d <= e'') then Domain.constrain in_d e''
+        if Domain.(<=) ~lhs:in_d ~rhs:e'' then Domain.constrain in_d e''
         else Domain.constrain (Domain.copy in_d) e''  (** TODO: not here... where to copy?! HELP! *)
   end
   
@@ -307,7 +292,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     L.progress "\n";
     !(!state_ref_ref))
 
-  let pp_session_name _node fmt = F.pp_print_string fmt "Floatings checker"
+  let pp_session_name node fmt = F.fprintf fmt "Floatings %a" CFG.Node.pp_id (CFG.Node.id node)
 end
 (* Just to check the framework interface! **)
 module CFG = ProcCfg.OneInstrPerNode (ProcCfg.Normal)

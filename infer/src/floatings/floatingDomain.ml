@@ -38,8 +38,6 @@ let eq_nan (a:float) (b:float) : bool =
   | (Zero, Zero) -> (copysign 1. a) = (copysign 1. b)
   | _ -> a = b
 
-(** Add pp or unneeded? *)
-
 module Range_el = struct
   type t = 
   | Range of float*float
@@ -231,6 +229,15 @@ let widen ~prev ~next ~num_iters =
   else join prev next
 
 let pp f _ = F.pp_print_string f "()"
+
+let pp_summary f {ranges;aliases} = 
+  let pp_k_rng k rng =
+  (F.fprintf f "%s:" k;
+  let open Range_el in
+  match rng with
+  | Bottom -> F.fprintf f "[] "
+  | Range (l,u) -> F.fprintf f "[%f, %f] " l u) in
+  Hashtbl.iter pp_k_rng ranges
 
 
 

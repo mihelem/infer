@@ -59,3 +59,4 @@ val widen : prev:t -> next:t -> num_iters:int -> t
 val initial : t
 val empty_d : ?n:int -> unit -> t
 val make_empty : ?n:int -> unit -> t
+val pp_summary : Format.formatter -> t -> unit
