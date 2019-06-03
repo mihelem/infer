@@ -45,6 +45,9 @@ val alias_find_opt : t -> string -> string option
 val alias_add : t -> string -> string -> unit
 val alias_replace : t -> string -> string -> unit
 val copy : t -> t
+val id2t : t -> Exp.t -> Range_el_opt.t -> t
+val print_only : t -> unit
+val print : t -> t
 
 type summary = t
 
@@ -53,3 +56,5 @@ val join : t -> t -> t
 val constrain : t -> t -> t
 val widen : prev:t -> next:t -> num_iters:int -> t
 val initial : t
+val empty_d : ?n:int -> unit -> t
+val make_empty : ?n:int -> unit -> t

@@ -4,7 +4,6 @@
 open! IStd
 module F = Format
 module L = Logging
-module Hashtbl = Caml.Hashtbl
 
 (**
 module Payload = SummaryPayload.Make (struct
@@ -33,7 +32,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   type extras = ProcData.no_extras
 
   let print_instr (instr : Sil.instr) : Sil.instr =
-    L.progress "Floatings: %a \t--> " (Sil.pp_instr ~print_types:true Pp.text) instr;
+    L.progress " %a \t--> " (Sil.pp_instr ~print_types:true Pp.text) instr;
     instr
 
   let print_range (rng : Domain.Range_el_opt.t) : Domain.Range_el_opt.t =
@@ -44,8 +43,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     rng
 
   let rec apply_exp (astate : Domain.t) (e : Exp.t) : Domain.Range_el_opt.t =
-    let (ranges, aliases) = (Domain.get_ranges astate, Domain.get_aliases astate)
-    in match e with
+  (**  let (ranges, aliases) = (Domain.get_ranges astate, Domain.get_aliases astate) in *)
+    match e with
     | Exp.Var id -> 
       let id_string = Ident.to_string id in
       (match (Domain.find_opt astate id_string) with
@@ -67,12 +66,216 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | Div -> Domain.Range_el_opt.div (apply_exp astate e1) (apply_exp astate e2)
       | _ -> apply_exp astate e1 ) (** TODO *)
     | _ -> None
+
+
+(** Logical
+      Binop: LAnd, LOr 
+      Unop: LNot
+    Arithmetic
+      Binop: PlusA _, MinusA _, Mult _, Div
+      Unop: Neg
+    Comparison
+      Binop: Le, Lt, Ge, Gt, Eq, Ne
+*)
+  module Constrain = struct
+  
+  (** Logical Normalization *)
+    let n_bop (op : Binop.t) : Binop.t =
+      let open Binop in
+      match op with
+      | LAnd -> LOr
+      | LOr -> LAnd
+      | Lt -> Ge
+      | Le -> Gt
+      | Gt -> Le
+      | Ge -> Lt
+      | Eq -> Ne
+      | Ne -> Eq
+      | _ -> op
+
+    let rec p_form ?(ng=false) (e : Exp.t) : Exp.t =
+      match (e, ng) with
+      | (Exp.UnOp (Unop.LNot, en, _), ng) -> p_form en ~ng:(not ng)
+      | (Exp.BinOp (op, e1, e2), false) -> Exp.BinOp (op, p_form e1, p_form e2)
+      | (Exp.BinOp (op, e1, e2), true) -> Exp.BinOp (n_bop op, p_form e1 ~ng:ng, p_form e2 ~ng:ng)
+      | _ -> e
+    
+  (** Arithmetic Normalization *)    
+  (** Sound iff in SSA form, so each identifier is appearing once *)      
+    let c_bop (op : Binop.t) : Binop.t =
+      let open Binop in
+      match op with
+      | Lt -> Gt
+      | Le -> Ge
+      | Gt -> Lt 
+      | Ge -> Le
+      | _ -> op
+
+    let is_c (op : Binop.t) : bool =
+      let open Binop in
+      match op with
+      | Lt | Le | Ge | Gt | Div | MinusA _ -> false
+      | _ -> true     (** true means also not interested in the property *)
+
+    let do_binopt (op : Binop.t) (e1 : Exp.t) (e2 : Exp.t option) : Exp.t =
+      match e2 with
+      | None -> e1
+      | Some e2' -> Exp.BinOp (op, e1, e2')
+
+  (** (e1 aop e2) cop e  --> ...  *)
+    let simpl_bin_lhs (cop : Binop.t) (aop : Binop.t) (e1 : Exp.t) (e2 : Exp.t) (e : Exp.t) : Exp.t option =
+      let open Float in
+      let f_zero = Exp.Const (Const.Cfloat 0.) in
+      let f_nzero = Exp.Const (Const.Cfloat (-0.)) in
+      match aop with
+      | Binop.PlusA None -> Some 
+        (Exp.BinOp (Binop.LAnd,
+          Exp.BinOp (cop, e1,
+            Exp.BinOp (Binop.MinusA None, e, e2)),
+          Exp.BinOp (cop, e2,
+            Exp.BinOp (Binop.MinusA None, e, e1))))
+      | Binop.MinusA None -> Some
+        (Exp.BinOp (Binop.LAnd,
+          Exp.BinOp (cop, e1,
+            Exp.BinOp (Binop.PlusA None, e, e2)),
+          Exp.BinOp (c_bop cop, e2,
+            Exp.BinOp (Binop.MinusA None, e1, e2))))
+      | Binop.Mult None ->
+        let e' e1 e2 =
+          Exp.BinOp (Binop.LOr,
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (cop, e1, 
+                Exp.BinOp (Binop.Div, e, e2)),
+              Exp.BinOp (Binop.Ge, e2, f_zero)),
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (c_bop cop, e1, 
+                Exp.BinOp (Binop.Div, e, e2)),
+              Exp.BinOp (Binop.Le, e2, f_nzero ))) in Some
+        (Exp.BinOp (Binop.LAnd, 
+          e' e1 e2,
+          e' e2 e1))
+      | Binop.Div -> Some
+        (Exp.BinOp (Binop.LAnd,
+          Exp.BinOp (Binop.LOr,
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (cop, e1, 
+                Exp.BinOp (Binop.Mult None, e, e2)),
+              Exp.BinOp (Binop.Ge, e2, f_zero)),
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (c_bop cop, e1, 
+                Exp.BinOp (Binop.Mult None, e, e2)),
+              Exp.BinOp (Binop.Le, e2, f_nzero))),
+          Exp.BinOp (Binop.LOr,
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (c_bop cop, e2, 
+                Exp.BinOp (Binop.Div, e1, e)),
+              Exp.BinOp (Binop.LOr,
+                Exp.BinOp (Binop.LAnd,
+                  Exp.BinOp (Binop.Ge, e, f_zero),
+                  Exp.BinOp (Binop.Ge, e2, f_zero)),
+                Exp.BinOp (Binop.LAnd,
+                  Exp.BinOp (Binop.Le, e, f_nzero),
+                  Exp.BinOp (Binop.Le, e2, f_nzero)))),
+            Exp.BinOp (Binop.LAnd,
+              Exp.BinOp (cop, e2, 
+                Exp.BinOp (Binop.Div, e1, e)),
+              Exp.BinOp (Binop.LOr,
+                Exp.BinOp (Binop.LAnd,
+                  Exp.BinOp (Binop.Ge, e, f_zero),
+                  Exp.BinOp (Binop.Le, e2, f_nzero)),
+                Exp.BinOp (Binop.LAnd,
+                  Exp.BinOp (Binop.Le, e, f_nzero),
+                  Exp.BinOp (Binop.Ge, e2, f_zero)))))))
+      | _ -> None                
+
+    let rec simpl_lhs (cop : Binop.t) (e1 : Exp.t) (e2 : Exp.t) : Exp.t option =
+      match e1 with
+      | Exp.UnOp (Unop.Neg, e1', tt) -> 
+        simpl_lhs (c_bop cop) e1' (Exp.UnOp (Unop.Neg, e2, tt))
+      | Exp.BinOp (bop, e1', e2') -> 
+        simpl_bin_lhs cop bop e1' e2' e2
+      | Exp.Var _ | Exp.Lvar _ | Exp.Const _ -> Some (Exp.BinOp (cop, e1, e2))
+      | _ -> None       (** None identifying formats which we do not recognize, e.g. ((a<b)+c<7.) *)
+
+  (** To be applied to positive form: after p_form *)
+    let rec catch_cmp (e_o : Exp.t option) : Exp.t option =
+      match e_o with
+      | None -> None
+      | Some e ->
+        (match e with
+        | Exp.BinOp (op, e1, e2) ->
+          (let open Binop in
+          match op with
+          | Lt | Le | Gt | Ge | Eq | Ne ->
+            (match e1 with
+            | Exp.Var _ | Exp.Lvar _ | Exp.Const _ ->
+              Some e
+            | _ ->
+              catch_cmp (simpl_lhs op e1 e2))
+          | LAnd | LOr -> 
+            (match (catch_cmp (Some e1), catch_cmp (Some e2)) with
+            | (Some e1', Some e2') -> Some (Exp.BinOp (op, e1', e2'))
+            | (None, Some e') | (Some e', None) -> Some e'
+            | (None, None) -> None)
+          | _ -> None)
+        | _ -> None)
+
+    let rec symmetrize (e : Exp.t) : Exp.t =
+      match e with
+      | Exp.BinOp (op, e1, e2) ->
+        (let open Binop in
+        match op with
+        | Le | Lt | Ge | Gt | Eq | Ne ->
+          Exp.BinOp (LAnd, e, Exp.BinOp (c_bop op, e2, e1))
+        | LAnd | LOr -> Exp.BinOp (op, symmetrize e1, symmetrize e2)
+        | _ -> e)               
+      | Exp.UnOp (op, e', tt) -> 
+        (match op with
+        | Unop.LNot -> Exp.UnOp (op, symmetrize e', tt)
+        | _ -> e)
+      | _ -> e        (** By now I stay away from closures, casts, etc... *)
+
+    let normalize (e : Exp.t) : Exp.t option =
+      let ep = p_form e in
+      let es = symmetrize ep in
+      catch_cmp (Some es)
+
+(** Sil.Prune (cond_e, loc, true_branch, kind) *)
+    let rec to_ranges (in_d : Domain.t) (e : Exp.t) : Domain.t =
+      match e with
+      | Exp.BinOp (Binop.LAnd, e1, e2) -> Domain.constrain (to_ranges in_d e1) (to_ranges in_d e2)
+      | Exp.BinOp (Binop.LOr, e1, e2) -> Domain.join (to_ranges in_d e1) (to_ranges in_d e2)
+      | Exp.BinOp (Binop.Le, e1, e2) 
+      | Exp.BinOp (Binop.Lt, e1, e2) ->
+        let rng = Domain.Range_el_opt.open_left (apply_exp in_d e2) in
+        Domain.id2t in_d e1 rng
+      | Exp.BinOp (Binop.Ge, e1, e2)
+      | Exp.BinOp (Binop.Gt, e1, e2) ->
+        let rng = Domain.Range_el_opt.open_right (apply_exp in_d e2) in
+        Domain.id2t in_d e1 rng
+      | Exp.BinOp (Binop.Eq, e1, e2) ->
+        let rng = apply_exp in_d e2 in
+        Domain.id2t in_d e1 rng
+      | Exp.BinOp (Binop.Ne, e1, e2) ->
+        Domain.id2t in_d e1 (Some Domain.all_R)
+      | _ -> Domain.make_empty ~n:0 ()
+
+    let apply (in_d : Domain.t) (e : Exp.t) : Domain.t =
+      let e_o = normalize e in
+      match e_o with
+      | None -> Domain.copy in_d
+      | Some e' ->
+        L.progress "%a " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
+        Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e'))
+  end
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
-  let exec_instr (state : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
-    let astate = Domain.copy state in
-    (match print_instr instr with
+  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
+    (**let astate = Domain.copy state in*)
+    let state_ref = ref astate in
+    let state_ref_ref = ref state_ref in
+    ((match print_instr instr with
     | Sil.Load (id, e, t, loc) -> 
       (match print_range (apply_exp astate e) with
       | Some rng -> Domain.replace astate (Ident.to_string id) rng
@@ -90,7 +293,26 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, loc, true_branch, kind) -> 
-      let apply_constrain op is_true (pvar_string_opt : string option) (e : Exp.t) =
+      L.progress " \n    IN :::: "; Domain.print_only (!(!state_ref_ref)); L.progress "\n";
+      state_ref_ref := ref (Constrain.apply astate cond_e); 
+      L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref))
+    (**     let normalize (e : Exp.t) : Exp.t option =
+      let ep = p_form e in
+      let es = symmetrize ep in
+      catch_cmp (Some ep) *)
+      (**let e =
+        (let e1 = Constrain.p_form cond_e in
+        let e2 = Constrain.symmetrize e1 in
+        let e3_opt = Constrain.catch_cmp (Some e2) in
+        match e3_opt with
+        | Some e3 -> e3
+        | None -> e2) in
+      L.progress "%a " (Sil.pp_exp_printenv ~print_types:true Pp.text) e *)
+    | _ -> ());
+   (** Domain.print_only astate; *)
+    L.progress "\n";
+    !(!state_ref_ref))
+      (** let apply_constrain op is_true (pvar_string_opt : string option) (e : Exp.t) =
         match pvar_string_opt with
         | None -> ()
         | Some pvar_string ->
@@ -121,7 +343,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         | Exp.BinOp (op, Exp.Var id, e) -> 
           apply_constrain op false (Domain.alias_find_opt astate (Ident.to_string id)) e
         | _ -> ())
-      | _ -> ())
+      | _ -> ()) *)
 (*
       -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
         (Exp.pp_printenv ~print_types:true Pp.text) e1
@@ -129,9 +351,6 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         (match e1 with
         | Exp.Lvar pvar -> Logging.progress "Floatings: STORED on Lvar %a\n" Pvar.pp_value pvar
         | _ -> ()) *)
-    | _ -> ()); 
-    L.progress "\n";
-    astate
 
 
   let pp_session_name _node fmt = F.pp_print_string fmt "Floatings checker"

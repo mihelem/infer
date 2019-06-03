@@ -74,6 +74,11 @@ let all_R = Range_el.Range (Float.neg_infinity, Float.infinity)
 module Range_el_opt = struct
   type t = Range_el.t option
 
+  let to_range_el (rng_o : t) : Range_el.t =
+    match rng_o with
+    | Some rng -> rng
+    | None -> all_R
+
   let ( <= ) (lhs:t) (rhs:t) : bool =
     match (lhs, rhs) with
     | (None, _) -> true
@@ -155,6 +160,44 @@ let alias_find_opt {aliases = tbl} k = Hashtbl.find_opt tbl k
 let alias_add {aliases = tbl} k v = Hashtbl.add tbl k v
 let alias_replace {aliases = tbl} k v = Hashtbl.replace tbl k v
 let copy {ranges; aliases} = {ranges = Hashtbl.copy ranges; aliases = Hashtbl.copy aliases}
+let initial:t = {ranges = Hashtbl.create 100; aliases = Hashtbl.create 100}
+let empty_d ?(n = 10) _ : t = {ranges = Hashtbl.create n; aliases = Hashtbl.create n}
+let make_empty ?(n = 10) _ : t = copy (empty_d ~n:n ())
+let id2t (in_d : t) (e : Exp.t) (rng : Range_el_opt.t) : t =
+  match rng with
+  | None -> make_empty ~n:0 ()
+  | Some rng' -> 
+    (match e with
+   (** Exp.Lvar pvar -> Domain.alias_replace astate (Ident.to_string id) (Pvar.to_string pvar); *)
+    | Exp.Var id -> 
+      let out_d = make_empty ~n:2 () in
+      let id_string = Ident.to_string id in
+      let id_rng = Range_el_opt.to_range_el (find_opt in_d id_string) in
+      let rng'' = Range_el.constrain rng' id_rng in
+      let id_alias = alias_find_opt in_d (Ident.to_string id) in
+      let rng_out =
+        (match id_alias with
+        | None -> rng''
+        | Some id_alias' ->
+          let alias_rng = Range_el_opt.to_range_el (find_opt in_d id_alias') in
+          let rng_out = Range_el.constrain alias_rng rng'' in
+          (add out_d id_alias' rng_out;
+          rng_out)
+        ) in
+      add out_d id_string rng_out;
+      out_d
+    (** | Exp.Lvar pvar *)
+    | _ -> make_empty ~n:0 ())
+let print_only {ranges; aliases} : unit =
+  let print_couple (k:string) (v:Range_el.t) =
+    (Logging.progress "%s:" k; 
+    match v with
+    | Bottom -> Logging.progress "[] "
+    | Range (l,u) -> Logging.progress "[%f, %f] " l u)
+  in Hashtbl.iter print_couple ranges
+let print (in_d : t) : t =
+  (print_only in_d);
+  in_d
 
 let ( <= ) ~lhs ~rhs = 
   let ({ranges = l}, {ranges = r}) = (lhs, rhs) in
@@ -186,7 +229,8 @@ let widen ~prev ~next ~num_iters =
 
 let pp f _ = F.pp_print_string f "()"
 
-let initial:t = {ranges = Hashtbl.create 100; aliases = Hashtbl.create 100}
+
+
 
 (*
 let join (a:t) (b:t) : t = 
