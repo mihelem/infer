@@ -44,6 +44,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
     | Exp.Lvar pvar -> let pvar_string = Pvar.to_string pvar in
       (match (Domain.find_opt astate pvar_string) with
       | None -> L.progress "?!? Pvar not found in table!! ?!?";
+          Domain.print_only astate;
           Domain.add astate pvar_string Domain.all_R; 
           Some Domain.all_R
       | Some rng -> Some rng)
@@ -227,38 +228,39 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       let es = symmetrize ep in
       catch_cmp (Some es)
 
-    let rec to_ranges (in_d : Domain.t) (e : Exp.t) : Domain.t =
+    let rec to_ranges (in_d : Domain.t) (constr : Domain.t) (e : Exp.t) : Domain.t =
       match e with
       | Exp.BinOp (Binop.LAnd, e1, e2) -> 
-        let in_d' = Domain.copy in_d in
-        let in_d'' = Domain.constrain in_d' (to_ranges in_d e1) in
-        to_ranges in_d'' e2
-      | Exp.BinOp (Binop.LOr, e1, e2) -> Domain.merge (to_ranges in_d e1) (to_ranges in_d e2)
+        let constr' = Domain.constrain constr (to_ranges in_d constr e1) in
+        Domain.constrain_inplace constr' (to_ranges in_d constr' e2)
+      | Exp.BinOp (Binop.LOr, e1, e2) -> Domain.merge_inplace (to_ranges in_d constr e1) (to_ranges in_d constr e2)
       | Exp.BinOp (Binop.Le, e1, e2) 
       | Exp.BinOp (Binop.Lt, e1, e2) ->
-        let rng = Domain.Range_el_opt.open_left (apply_exp in_d e2) in
+        let rng = Domain.Range_el_opt.open_left (apply_exp (Domain.constrain in_d constr) e2) in
         Domain.id2t in_d e1 rng
       | Exp.BinOp (Binop.Ge, e1, e2)
       | Exp.BinOp (Binop.Gt, e1, e2) ->
-        let rng = Domain.Range_el_opt.open_right (apply_exp in_d e2) in
+        let rng = Domain.Range_el_opt.open_right (apply_exp (Domain.constrain in_d constr) e2) in
         Domain.id2t in_d e1 rng
       | Exp.BinOp (Binop.Eq, e1, e2) ->
-        let rng = apply_exp in_d e2 in
+        let rng = apply_exp (Domain.constrain in_d constr) e2 in
         Domain.id2t in_d e1 rng
       | Exp.BinOp (Binop.Ne, e1, e2) ->
         Domain.id2t in_d e1 (Some Domain.all_R)
-      | _ -> Domain.make_empty ~n:0 ()
+      | _ -> Logging.progress "\n 250 \n"; Domain.make_empty ~n:0 ()
 
     let apply (in_d : Domain.t) (e : Exp.t) : Domain.t =
       let e_o = normalize e in
       match e_o with
-      | None -> Domain.copy in_d
+      | None -> in_d
       | Some e' ->
         L.progress "%a => " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
         (* Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e')) *)
-        let e'' = Domain.print (to_ranges in_d e') in
-        if Domain.(<=) ~lhs:in_d ~rhs:e'' then Domain.constrain in_d e''
-        else Domain.constrain (Domain.copy in_d) e''  (** TODO: not here... where to copy?! HELP! *)
+        let out_d = Domain.print (to_ranges in_d (Domain.create 0 0) e') in
+        if Domain.(<=) ~lhs:in_d ~rhs:out_d then 
+          (Logging.progress " \n260\n ";
+          Domain.constrain_inplace in_d out_d)
+        else Domain.constrain in_d out_d  (** TODO: not here... where to copy?! HELP! *)
   end
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
@@ -284,11 +286,12 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, loc, true_branch, kind) -> 
-    (**  L.progress " \n    IN :::: "; Domain.print_only (!(!state_ref_ref)); L.progress "\n"; *)
       state_ref_ref := ref (Constrain.apply astate cond_e); 
-    (**  L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref)) *)
+      L.progress " \n    IN :::: "; Domain.print_only astate; L.progress "\n";
+      L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref))
     | Sil.Call _ -> ()  (** This is OPALT's job ^_^ *)
-    | Metadata metadata -> state_ref_ref := ref (Domain.copy astate); ());
+    | Sil.Metadata metadata -> state_ref_ref := ref (Domain.copy astate); ());
+    L.progress " \n    OUT :::: "; Domain.print_only astate;
     L.progress "\n";
     !(!state_ref_ref))
 

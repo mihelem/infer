@@ -4,6 +4,7 @@
 open! IStd
 
 module F = Format
+module L = Logging
 module Hashtbl = Caml.Hashtbl
 
 (**
@@ -79,20 +80,20 @@ module Range_el_opt = struct
 
   let ( <= ) (lhs:t) (rhs:t) : bool =
     match (lhs, rhs) with
-    | (None, _) -> true
+    | (None, _) -> false
+    | (_, None) -> true
     | (Some l, Some r) -> Range_el.(l <= r)
-    | (_, None) -> false
   
   let merge (a:t) (b:t) : t =
     match (a,b) with
-    | (None, b) -> b
-    | (a, None) -> a
+    | (None, b) -> None
+    | (a, None) -> None
     | (Some a', Some b') -> Some (Range_el.merge a' b')
 
   let constrain (base:t) (constr:t) : t =
     match (base,constr) with
-    | (None, constr) -> None
-    | (a, None) -> a
+    | (None, constr) -> constr
+    | (base, None) -> base
     | (Some base', Some constr') -> Some (Range_el.constrain base' constr')
 (** Naive approach, again... Purpose: testing the framework! *)
 (** TODO: implement the table from Bagnara's paper *)
@@ -161,6 +162,7 @@ let copy {ranges; aliases} = {ranges = Hashtbl.copy ranges; aliases = Hashtbl.co
 let initial:t = {ranges = Hashtbl.create 100; aliases = Hashtbl.create 100}
 let empty_d ?(n = 10) _ : t = {ranges = Hashtbl.create n; aliases = Hashtbl.create n}
 let make_empty ?(n = 10) _ : t = copy (empty_d ~n:n ())
+let create (n_r:int) (n_a:int) : t = {ranges=Hashtbl.create n_r; aliases=Hashtbl.create n_a}
 let id2t (in_d : t) (e : Exp.t) (rng : Range_el_opt.t) : t =
   match rng with
   | None -> make_empty ~n:0 ()
@@ -188,11 +190,14 @@ let id2t (in_d : t) (e : Exp.t) (rng : Range_el_opt.t) : t =
     | _ -> make_empty ~n:0 ())
 let print_only {ranges; aliases} : unit =
   let print_couple (k:string) (v:Range_el.t) =
-    (Logging.progress "%s:" k; 
+    (Logging.progress "%s " k(*; 
     match v with
     | Bottom -> Logging.progress "[] "
-    | Range (l,u) -> Logging.progress "[%f, %f] " l u)
-  in Hashtbl.iter print_couple ranges
+    | Range (l,u) -> Logging.progress "[%f, %f] " l u*)) in
+  Hashtbl.iter print_couple ranges;
+  let print_alias (k:string) (alias:string) =
+    Logging.progress " %s " k in
+    Hashtbl.iter print_alias aliases
 let print (in_d : t) : t =
   (print_only in_d);
   in_d
@@ -200,31 +205,46 @@ let print (in_d : t) : t =
 let ( <= ) ~lhs ~rhs = 
   let ({ranges = l}, {ranges = r}) = (lhs, rhs) in
   let cmp (k:string) (v:Range_el.t) (cum:bool) =
-    cum && Range_el_opt.(<=) (Some v) (Hashtbl.find_opt r k)
-  in Hashtbl.fold cmp l true
+    cum && Range_el_opt.(<=) (Hashtbl.find_opt l k) (Some v) in
+  Hashtbl.fold cmp r true
 
 (** TODO: combine aliases, if needed *)
-let combine ({ranges = a; aliases = aa}:t) ({ranges = b}:t) ~combiner:combiner : t =
-  let combine_els (k:string) (v:Range_el.t) (cum:ranges_t) =
-    let replace_opt (tbl:ranges_t) (k:string) (v_opt:Range_el_opt.t) =
-      match v_opt with
-      | None -> tbl
-      | Some v' -> Hashtbl.replace tbl k v'; tbl
-    in replace_opt cum k (combiner (Some v) (Hashtbl.find_opt cum k))
-  in let ab = Hashtbl.fold combine_els a b
-  in {ranges = ab; aliases = aa}
+let combine_copy (a:t) (b:t) ~combiner:combiner : t =
+  let result = create ((Hashtbl.length a.ranges)+(Hashtbl.length b.ranges)) ((Hashtbl.length a.aliases)+(Hashtbl.length b.aliases)) in
+  let replace_opt (tbl : ranges_t) (k : string) (v_opt : Range_el_opt.t) =
+    match v_opt with
+    | None -> ()
+    | Some v -> Hashtbl.replace tbl k v in
+  let iter_step (k:string) (v:Range_el.t) ~lookup_tbl =
+    replace_opt result.ranges k (combiner (Some v) (Hashtbl.find_opt lookup_tbl k)) in
+  Hashtbl.iter (iter_step ~lookup_tbl:b.ranges) a.ranges;
+  Hashtbl.iter (iter_step ~lookup_tbl:a.ranges) b.ranges;
+  Hashtbl.iter (fun k al -> Hashtbl.replace result.aliases k al) a.aliases;
+  Hashtbl.iter (fun k al -> Hashtbl.replace result.aliases k al) b.aliases;
+  result
 
-let merge = combine ~combiner:Range_el_opt.merge
+let combine ({ranges = a; aliases = aa}:t) ({ranges = b; aliases = ba}:t) ~combiner:combiner : t =
+  let f k rng ~tbl1 ~tbl2 =
+    let v = combiner (Some rng) (Hashtbl.find_opt tbl2 k) in
+    match v with
+    | None -> Hashtbl.remove tbl1 k
+    | Some v' -> Hashtbl.replace tbl1 k v' in
+  Hashtbl.iter (f ~tbl1:a ~tbl2:a) b;
+  Hashtbl.iter (f ~tbl1:a ~tbl2:b) a;
+  {ranges=a;aliases=aa}
+
+let merge = combine_copy ~combiner:Range_el_opt.merge
+let merge_inplace = combine ~combiner:Range_el_opt.merge
 (* constrain may be used when there is a Prune (a guard) *)
-let constrain = combine ~combiner:Range_el_opt.constrain
+let constrain = combine_copy ~combiner:Range_el_opt.constrain
+let constrain_inplace = combine ~combiner:Range_el_opt.constrain
 
-let join = merge
-(*  let d1' = copy d1 in
-  merge d1' d2 *)
+let join a b = L.progress " JOIN\n";print_only a;L.progress " °°°° ";print_only b;L.progress " = "; print (merge a b)
 
 let max_iters = 5          (** CHECK *)
 
 let widen ~prev ~next ~num_iters = 
+  Logging.progress "\n WIDEN\n ";
   if phys_equal prev next || Int.(num_iters >= max_iters) then prev
   else join prev next
 
@@ -238,26 +258,3 @@ let pp_summary f {ranges;aliases} =
   | Bottom -> F.fprintf f "[] "
   | Range (l,u) -> F.fprintf f "[%f, %f] " l u) in
   Hashtbl.iter pp_k_rng ranges
-
-
-
-
-(*
-let join (a:t) (b:t) : t = 
-  let merge_els (str:string) (rng:Range_el.t) (cum:t) =
-    let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
-      match rng_opt with
-      | None -> tbl
-      | Some rng' -> Hashtbl.replace tbl str rng'; tbl
-    in replace_opt cum str (Range_el_opt.merge (Some rng) (Hashtbl.find_opt cum str))
-  in Hashtbl.fold merge_els a b
-
-let constrain (bases:t) (constrs:t) : t = 
-  let constrain_els (str:string) (rng:Range_el.t) (cum:t) =
-    let replace_opt (tbl:t) (str:string) (rng_opt:Range_el_opt.t) =
-      match rng_opt with
-      | None -> tbl
-      | Some rng' -> Hashtbl.replace tbl str rng'; tbl
-    in replace_opt cum str (Range_el_opt.constrain (Some rng) (Hashtbl.find_opt cum str))
-  in Hashtbl.fold merge_els a b
-**)
