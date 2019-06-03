@@ -52,8 +52,9 @@ val print : t -> t
 type summary = t
 
 val (<=) : lhs:t -> rhs:t -> bool
-val join : t -> t -> t
+val merge : t -> t -> t
 val constrain : t -> t -> t
+val join : t -> t -> t
 val widen : prev:t -> next:t -> num_iters:int -> t
 val initial : t
 val empty_d : ?n:int -> unit -> t

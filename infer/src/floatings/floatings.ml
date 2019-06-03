@@ -5,6 +5,7 @@ open! IStd
 module F = Format
 module L = Logging
 
+(** OPALT's job *)
 (**
 module Payload = SummaryPayload.Make (struct
   type t = FloatingDomain.summary
@@ -243,8 +244,11 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
 (** Sil.Prune (cond_e, loc, true_branch, kind) *)
     let rec to_ranges (in_d : Domain.t) (e : Exp.t) : Domain.t =
       match e with
-      | Exp.BinOp (Binop.LAnd, e1, e2) -> Domain.constrain (to_ranges in_d e1) (to_ranges in_d e2)
-      | Exp.BinOp (Binop.LOr, e1, e2) -> Domain.join (to_ranges in_d e1) (to_ranges in_d e2)
+      | Exp.BinOp (Binop.LAnd, e1, e2) -> 
+        let in_d' = Domain.copy in_d in
+        let in_d'' = Domain.constrain in_d' (to_ranges in_d e1) in
+        to_ranges in_d'' e2
+      | Exp.BinOp (Binop.LOr, e1, e2) -> Domain.merge (to_ranges in_d e1) (to_ranges in_d e2)
       | Exp.BinOp (Binop.Le, e1, e2) 
       | Exp.BinOp (Binop.Lt, e1, e2) ->
         let rng = Domain.Range_el_opt.open_left (apply_exp in_d e2) in
@@ -265,14 +269,16 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       match e_o with
       | None -> Domain.copy in_d
       | Some e' ->
-        L.progress "%a " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
-        Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e'))
+        L.progress "%a => " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
+        (* Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e')) *)
+        let e'' = Domain.print (to_ranges in_d e') in
+        if Domain.(in_d <= e'') then Domain.constrain in_d e''
+        else Domain.constrain (Domain.copy in_d) e''  (** TODO: not here... where to copy?! HELP! *)
   end
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
   let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (node : CFG.Node.t) (instr : Sil.instr) = 
-    (**let astate = Domain.copy state in*)
     let state_ref = ref astate in
     let state_ref_ref = ref state_ref in
     ((match print_instr instr with
@@ -296,62 +302,10 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       L.progress " \n    IN :::: "; Domain.print_only (!(!state_ref_ref)); L.progress "\n";
       state_ref_ref := ref (Constrain.apply astate cond_e); 
       L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref))
-    (**     let normalize (e : Exp.t) : Exp.t option =
-      let ep = p_form e in
-      let es = symmetrize ep in
-      catch_cmp (Some ep) *)
-      (**let e =
-        (let e1 = Constrain.p_form cond_e in
-        let e2 = Constrain.symmetrize e1 in
-        let e3_opt = Constrain.catch_cmp (Some e2) in
-        match e3_opt with
-        | Some e3 -> e3
-        | None -> e2) in
-      L.progress "%a " (Sil.pp_exp_printenv ~print_types:true Pp.text) e *)
-    | _ -> ());
-   (** Domain.print_only astate; *)
+    | Sil.Call _ -> ()  (** This is OPALT's job ^_^ *)
+    | Metadata metadata -> state_ref_ref := ref (Domain.copy astate); ());
     L.progress "\n";
     !(!state_ref_ref))
-      (** let apply_constrain op is_true (pvar_string_opt : string option) (e : Exp.t) =
-        match pvar_string_opt with
-        | None -> ()
-        | Some pvar_string ->
-          (let rng = Domain.find_opt astate pvar_string in
-          match ((op : Binop.t), (is_true : bool)) with
-          | (Lt, true) | (Ge, false) | (Le, true) | (Gt, false) ->
-            let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_left (apply_exp astate e)) in
-            (match print_range new_rng with
-            | Some new_rng'-> Domain.replace astate pvar_string new_rng'
-            | _ -> () )          
-          | (Gt, true) | (Le, false) | (Ge, true) | (Lt, false) ->
-            let new_rng = Domain.Range_el_opt.constrain rng (Domain.Range_el_opt.open_right (apply_exp astate e)) in
-            (match print_range new_rng with
-            | Some new_rng' -> Domain.replace astate pvar_string new_rng'
-            | _ -> () )
-          | _ -> ()) in
-      (match cond_e with
-      | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
-        let pvar_string = Pvar.to_string pvar in 
-        apply_constrain op true (Some pvar_string) e
-      | Exp.BinOp (op, Exp.Var id, e) -> 
-        apply_constrain op true (Domain.alias_find_opt astate (Ident.to_string id)) e
-      | Exp.UnOp (Unop.LNot, e, _) ->
-        (match e with
-        | Exp.BinOp (op, Exp.Lvar pvar, e) -> 
-          let pvar_string = Pvar.to_string pvar in 
-          apply_constrain op false (Some pvar_string) e
-        | Exp.BinOp (op, Exp.Var id, e) -> 
-          apply_constrain op false (Domain.alias_find_opt astate (Ident.to_string id)) e
-        | _ -> ())
-      | _ -> ()) *)
-(*
-      -> Logging.progress "Floatings: STORE %a -> after Subst -> %a\n" 
-        (Exp.pp_printenv ~print_types:true Pp.text) e1
-        (Sil.pp_exp_printenv ~print_types:true Pp.text) e1;
-        (match e1 with
-        | Exp.Lvar pvar -> Logging.progress "Floatings: STORED on Lvar %a\n" Pvar.pp_value pvar
-        | _ -> ()) *)
-
 
   let pp_session_name _node fmt = F.pp_print_string fmt "Floatings checker"
 end

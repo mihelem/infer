@@ -216,10 +216,13 @@ let combine ({ranges = a; aliases = aa}:t) ({ranges = b}:t) ~combiner:combiner :
   in let ab = Hashtbl.fold combine_els a b
   in {ranges = ab; aliases = aa}
 
-let join = combine ~combiner:Range_el_opt.merge
-
+let merge = combine ~combiner:Range_el_opt.merge
 (* constrain may be used when there is a Prune (a guard) *)
 let constrain = combine ~combiner:Range_el_opt.constrain
+
+let join = merge
+(*  let d1' = copy d1 in
+  merge d1' d2 *)
 
 let max_iters = 5          (** CHECK *)
 
