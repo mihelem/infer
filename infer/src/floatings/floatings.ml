@@ -331,7 +331,6 @@ let checker (args:Callbacks.proc_callback_args) : Summary.t =
       ~initial:FloatingDomain.initial with
   | None -> args.summary
   | Some post -> 
-    let formal_map = FormalMap.make args.proc_desc in
     Payload.update_summary post args.summary
 
 
