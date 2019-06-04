@@ -181,3 +181,7 @@ infer/src/.project
 /infer/src/deadcode/*.mli
 _opam
 _coverage
+
+# Floatings utils
+/infer/src/floatings/expr/_build/
+/infer/src/floatings/expr/*.native
