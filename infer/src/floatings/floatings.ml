@@ -265,7 +265,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
   type 'a t = {pdesc: Procdesc.t; tenv: Tenv.t; extras: 'a}  **)
-  let exec_instr (astate : Domain.t) (_extr : extras ProcData.t) (_node : CFG.Node.t) (instr : Sil.instr) = 
+  let exec_instr (astate : Domain.t) (extr : extras ProcData.t) (_node : CFG.Node.t) (instr : Sil.instr) = 
     let state_ref = ref astate in
     let state_ref_ref = ref state_ref in
     ((match print_instr instr with
@@ -289,7 +289,14 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       state_ref_ref := ref (Constrain.apply astate cond_e); ()
     (*  L.progress " \n    IN :::: "; Domain.print_only astate; L.progress "\n"; 
       L.progress " \n   OUT :::: "; Domain.print_only (!(!state_ref_ref)) *)
-    | Sil.Call _ -> ()  (** This is OPALT's job ^_^ *)
+      (** @OPALT: job stealing scheduling ^_^ *)
+    | Sil.Call ((id, {desc=Tfloat _}), Const (Cfun callee_pname), _actuals, _loc, _) ->  
+      (match Payload.read extr.pdesc callee_pname with
+      | Some castate ->
+        (match Domain.find_opt castate "return" with
+          | Some rng -> Domain.replace astate (Ident.to_string id) rng
+          | None -> () ); L.progress " CALLEE ASTATE RETRIEVED "
+      | None -> () )
     | Sil.Metadata metadata -> 
       (match metadata with
       | Sil.ExitScope (vars, _loc) ->
@@ -300,7 +307,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         in
         List.iter vars ~f:rm_var
       | Sil.Skip -> state_ref_ref := ref (Domain.copy astate)
-      | _ -> () ));
+      | _ -> () )
+    | _ -> ());
       (*| Sil.Abstract _loc -> ()(*state_ref_ref := ref (Domain.copy astate)*)*)
     (*L.progress " \n    OUT :::: "; Domain.print_only astate; *)
     L.progress "\n";
@@ -321,7 +329,10 @@ let checker (args:Callbacks.proc_callback_args) : Summary.t =
     Analyzer.compute_post 
       (ProcData.make_default args.proc_desc args.tenv) 
       ~initial:FloatingDomain.initial with
-  | None | Some _ -> args.summary
+  | None -> args.summary
+  | Some post -> 
+    let formal_map = FormalMap.make args.proc_desc in
+    Payload.update_summary post args.summary
 
 
 (* module CFG = ProcCfg.Normal **)
