@@ -1,5 +1,8 @@
 (*      InferNaL - Not a Linter     *)
 (* Copyright (c) 2019-present 5Kids *)
+(* MAYDO                            *)
+(* - Report NaN and stop analysis   *)
+(* - Deal with scopes (easy fix...) *)
 
 open! IStd
 module F = Format
@@ -43,8 +46,8 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | _ -> None)
     | Exp.Lvar pvar -> let pvar_string = Pvar.to_string pvar in
       (match (Domain.find_opt astate pvar_string) with
-      | None -> L.progress "?!? Pvar not found in table!! ?!?";
-          Domain.print_only astate;
+      | None -> L.progress "!Pvar not in table!";
+          (*Domain.print_only astate;*)
           Domain.add astate pvar_string Domain.all_R; 
           Some Domain.all_R
       | Some rng -> Some rng)
@@ -247,7 +250,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         Domain.id2t in_d e1 rng
       | Exp.BinOp (Binop.Ne, e1, _e2) ->
         Domain.id2t in_d e1 (Some Domain.all_R)
-      | _ -> Logging.progress "\n 250 \n"; Domain.make_empty ~n:0 ()
+      | _ -> Logging.progress "\n floatings: Constrain.to_ranges: INVALID EXPRESSION \n"; Domain.make_empty ~n:0 ()
 
     let apply (in_d : Domain.t) (e : Exp.t) : Domain.t =
       let e_o = normalize e in
@@ -257,10 +260,11 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         L.progress "%a => " (Sil.pp_exp_printenv ~print_types:true Pp.text) e';
         (* Domain.constrain (Domain.copy in_d) (Domain.print (to_ranges in_d e')) *)
         let out_d = Domain.print (to_ranges in_d (Domain.create 0 0) e') in
-        if Domain.(<=) ~lhs:in_d ~rhs:out_d then 
-          (Logging.progress " \n260\n ";
+        (**if Domain.(<=) ~lhs:in_d ~rhs:out_d then 
+          (Logging.progress " \n\t\t IN_STATE <= OUT_STATE\n ";
           Domain.constrain_inplace in_d out_d)
-        else Domain.constrain in_d out_d  (** TODO: not here... where to copy?! HELP! *)
+        else *)
+        Domain.constrain in_d out_d  (** TODO: not here... where to copy?! HELP! *)
   end
   
   (* Domain.t -> extras ProcData.t -> CFG.Node.t -> instr -> Domain.t
@@ -275,7 +279,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
       | None -> () );
       (match e with
       | Exp.Lvar pvar -> Domain.alias_replace astate (Ident.to_string id) (Pvar.to_string pvar);
-        L.progress " :: %s alias of %s  " (Ident.to_string id) (Pvar.to_string pvar)
+        L.progress "\n\t\tADD %s alias of %s  " (Ident.to_string id) (Pvar.to_string pvar)
       | _ -> () )
     | Sil.Store (e1, _t, e2, _loc) ->
       (match e1 with
@@ -283,7 +287,7 @@ module TransferFunctions (CFG : ProcCfg.S) = struct
         (match print_range (apply_exp astate e2) with
         | Some rng -> Domain.replace astate (Pvar.to_string pvar) rng
         | None -> ())
-      | _ -> ())
+      | _ -> Logging.progress "!Not a Local Variable!"; ())
     (** Prune: basic form, o.w. can use many Hashtbl then merge/constrain for each boolean op *)
     | Sil.Prune (cond_e, _loc, _true_branch, _kind) -> 
       state_ref_ref := ref (Constrain.apply astate cond_e); ()

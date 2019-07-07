@@ -1,5 +1,9 @@
 (*      InferNaL - Not a Linter     *)
 (* Copyright (c) 2019-present 5Kids *)
+(* MAYDO                            *)
+(* - Rounding mode                  *)
+(* - Fix then diff btw < and <= etc *)
+(* - Fix Widen                      *)
 
 open! IStd
 
@@ -96,7 +100,7 @@ module Range_el_opt = struct
     | (base, None) -> base
     | (Some base', Some constr') -> Some (Range_el.constrain base' constr')
 (** Naive approach, again... Purpose: testing the framework! *)
-(** TODO: implement the table from Bagnara's paper *)
+(** TODO: implement the table from Bagnara's paper (C bindings) *)
   let plus (a:t) (b:t) : t =
     match (a,b) with
     | (Some (Range_el.Range (a_l, a_u)), Some (Range_el.Range (b_l, b_u))) 
@@ -191,17 +195,20 @@ let id2t (in_d : t) (e : Exp.t) (rng : Range_el_opt.t) : t =
     | _ -> make_empty ~n:0 ())
 let print_only {ranges; aliases} : unit =
   let print_couple (k:string) (v:Range_el.t) =
-    (Logging.progress "%s:" k; 
+    (Logging.progress "%s∈" k; 
     match v with
     | Bottom -> Logging.progress "[] "
     | Range (l,u) -> Logging.progress "[%f, %f] " l u) in
-  Hashtbl.iter print_couple ranges; Logging.progress " where ";
+  Logging.progress "\n\tAState § "; 
+  Hashtbl.iter print_couple ranges(*; 
+  Logging.progress " where ";
   let print_alias (k:string) (alias:string) =
     Logging.progress " %s<->%s" k alias in
-    Hashtbl.iter print_alias aliases
+  Hashtbl.iter print_alias aliases*)
 let print (in_d : t) : t =
   (print_only in_d);
   in_d
+
 
 let ( <= ) ~lhs ~rhs = 
   let ({ranges = l}, {ranges = r}) = (lhs, rhs) in
@@ -241,16 +248,19 @@ let constrain = combine_copy ~combiner:Range_el_opt.constrain
 let constrain_inplace = combine ~combiner:Range_el_opt.constrain
 
 let join a b = 
-  L.progress " JOIN\n";print_only a;L.progress " °°°° ";print_only b;L.progress " = "; 
+  L.progress "  JOIN\n";print_only a;L.progress " JOIN ";print_only b;L.progress " = "; 
   let ab = print (merge a b) in
   L.progress "\n"; ab
 
 let max_iters = 5          (** CHECK *)
 
+(** MAYDO: fix the diverging widening *)
 let widen ~prev ~next ~num_iters = 
-  Logging.progress "\n WIDEN\n ";
-  if phys_equal prev next || Int.(num_iters >= max_iters) then prev
-  else join prev next
+  Logging.progress "\n  WIDEN";
+  if phys_equal prev next || Int.(num_iters >= max_iters) then 
+    (Logging.progress " STOPPED after %d/%d iterations\n " num_iters max_iters; prev)
+  else 
+    (Logging.progress "\n "; join prev next)
 
 let pp f _ = F.pp_print_string f "()"
 
