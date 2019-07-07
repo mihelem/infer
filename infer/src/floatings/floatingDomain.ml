@@ -159,6 +159,10 @@ let get_aliases {aliases} = aliases
 let find_opt {ranges = tbl} k = Hashtbl.find_opt tbl k
 let add {ranges = tbl} k v = Hashtbl.add tbl k v
 let replace {ranges = tbl} k v = Hashtbl.replace tbl k v
+let replace_opt {ranges = tbl} k v_opt = 
+  match v_opt with
+  | None -> ()
+  | Some v -> Hashtbl.replace tbl k v
 let remove d k = Hashtbl.remove d.ranges k; Hashtbl.remove d.aliases k
 let alias_find_opt {aliases = tbl} k = Hashtbl.find_opt tbl k
 let alias_add {aliases = tbl} k v = Hashtbl.add tbl k v
@@ -252,16 +256,31 @@ let join a b =
   let ab = print (merge a b) in
   L.progress "\n"; ab
 
-let max_iters = 5          (** CHECK *)
+let widen_to_infty ~prev ~next =
+  let ab = merge prev next in
+  let f k rng =
+    let r_ab = find_opt ab k in
+    let open Range_el_opt in
+    ((if not ((open_right r_ab) <= (open_right (Some rng))) then
+      replace_opt ab k (open_left r_ab));
+    (if not ((open_left r_ab) <= (open_left (Some rng))) then
+      replace_opt ab k (open_right r_ab))) in
+  Hashtbl.iter f prev.ranges;
+  Logging.progress "\tTO INFTY";print_only ab;Logging.progress "\n";ab
 
+let max_local_iters = 3
+let max_iters = 5          (** CHECK *)
 (** MAYDO: fix the diverging widening *)
 let widen ~prev ~next ~num_iters = 
   Logging.progress "\n  WIDEN";
   if phys_equal prev next || Int.(num_iters >= max_iters) then 
     (Logging.progress " STOPPED after %d/%d iterations\n " num_iters max_iters; prev)
   else 
-    (Logging.progress "\n "; join prev next)
-
+    (Logging.progress"\n";
+    match num_iters%max_local_iters with
+    | 0 -> widen_to_infty ~prev ~next
+    | _ -> join prev next)
+    
 let pp f _ = F.pp_print_string f "()"
 
 let pp_summary f {ranges;aliases=_aliases} = 
